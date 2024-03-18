@@ -1,0 +1,6 @@
+[requires]
+gtsam/4.2
+
+[generators]
+CMakeDeps
+CMakeToolchain
