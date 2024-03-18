@@ -81,6 +81,10 @@ Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &
 }
 
 const bool optimise = false;
+
+/// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
+/// and look at speed
+
 int main()
 {
     /// NOTE: Try except used because GTSAM under the hood may throw an
