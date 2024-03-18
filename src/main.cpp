@@ -1,4 +1,5 @@
 #include "gtsam/geometry/Quaternion.h"
+#include <Eigen/src/Core/Matrix.h>
 #include <gtsam/base/Vector.h>
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/geometry/Pose3.h>
@@ -14,13 +15,6 @@
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/BetweenFactor.h>
-
-#include <Eigen/Dense>
-#include <fstream>
-#include <iostream>
-#include <optional>
-#include <sstream>
-#include <stdexcept>
 
 using namespace gtsam;
 
@@ -144,7 +138,7 @@ int main()
         Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6) * 1e-5;
 
         boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p =
-            PreintegratedCombinedMeasurements::Params::MakeSharedD(0.0);
+            PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
 
         p->accelerometerCovariance = measured_acc_cov;
         p->integrationCovariance = integration_error_cov;
@@ -153,8 +147,8 @@ int main()
         p->biasOmegaCovariance = bias_omega_cov;
         p->biasAccOmegaInt = bias_acc_omega_int;
 
-        imu_preintegrated_ = new PreintegratedImuMeasurements(p, prior_imu_bias);
-        // imu_preintegrated_ = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
+        // imu_preintegrated_ = new PreintegratedImuMeasurements(p, prior_imu_bias);
+        imu_preintegrated_ = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
 
         NavState prev_state{prior_pose, prior_velocity};
         NavState prop_state = prev_state;
@@ -175,24 +169,25 @@ int main()
 
             imu_preintegrated_->integrateMeasurement(data.f_meas.col(i), data.w_meas.col(i), dt);
 
-            auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
-            // auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
+            // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
+            auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
 
-            ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-                                    V(correction_count),     B(correction_count - 1), *preint_imu_combined};
+            // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+            //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
 
-            // CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-            //                                 V(correction_count),     B(correction_count - 1), B(correction_count),
-            //                                 *preint_imu_combined};
+            CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+                                            V(correction_count),     B(correction_count - 1), B(correction_count),
+                                            *preint_imu_combined};
             graph->add(imu_factor);
 
-            imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
+            // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
 
-            // NOTE: This should NOT be added when using combined measurements
-            graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
-                                                            bias_noise_model));
+            //// NOTE: This should NOT be added when using combined measurements
+            // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
+            //                                                bias_noise_model));
 
-            if (i % 10 == 0)
+            // if (i % 10 == 0)
+            if ((i + 1) % 10 == 0)
             {
                 std::cout << "Adding aiding measurement...\n";
                 noiseModel::Diagonal::shared_ptr correction_noise =
@@ -207,33 +202,37 @@ int main()
             initial_values.insert(B(correction_count), prev_bias);
 
             LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
-
-            std::cout << "Optimising for measurement " << correction_count << "\n";
             Values result = optimizer.optimize();
 
-            // Override the beginning of the preintegration for the next step
+            // Override the beginning of the preintegration for the
             prev_state = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
             prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+
+            //            prev_state = prop_state;
 
             // Reset the preintegration object
             imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
 
-            // Print out the position and orientation error for comparison
+            // Print out the position and orientation error for
+            // comparison
             Vector3 gtsam_position = prev_state.pose().translation();
             Vector3 true_position = data.p_nb_n.col(i);
             Vector3 position_error = gtsam_position - true_position;
             current_position_error = position_error.norm();
-            std::cout << "Position error:" << current_position_error << "\n";
 
-            // NOTE: Can't map data.q_nb to quaternion directly
-            // Quaternion gtsam_quat = prev_state.pose().rotation().toQuaternion();
-            // Quaternion true_quat = data.q_nb.col(i);
-            // Quaternion quat_error = gtsam_quat * true_quat.inverse();
-            // quat_error.normalize();
-            // Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
+            Quaternion gtsam_quat = prev_state.pose().rotation().toQuaternion();
+            Quaternion true_quat =
+                Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2], data.q_nb.col(i)[3])
+                    .toQuaternion();
+            Quaternion quat_error = gtsam_quat * true_quat.inverse();
+            quat_error.normalize();
+            Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
+            current_orientation_error = euler_angle_error.norm();
+            std::cout << "Position error:" << current_position_error
+                      << " - Attitude error: " << current_orientation_error << "\n";
         }
 
-        graph->print();
+        //        graph->print();
     }
     catch (std::invalid_argument &e)
     {
