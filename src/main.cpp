@@ -59,6 +59,10 @@ Eigen::MatrixXd read_CSV(const std::string &filename)
         values.data(), rows, values.size() / rows);
 }
 
+void print_vector(const Eigen::VectorXd &v, const std::string &name)
+{
+    std::cout << name << " | X: " << v.x() << " Y: " << v.y() << " Z: " << v.z() << "\n";
+}
 Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &num_rows = std::nullopt)
 {
     Data data;
@@ -76,6 +80,7 @@ Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &
     return data;
 }
 
+const bool optimise = false;
 int main()
 {
     /// NOTE: Try except used because GTSAM under the hood may throw an
@@ -163,7 +168,7 @@ int main()
 
         double output_time = 0.0;
         double dt = 0.01;
-        for (int i = 0; i < data.t.rows(); i++)
+        for (int i = 1; i < data.t.rows(); i++)
         {
             correction_count++;
 
@@ -186,27 +191,34 @@ int main()
             // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
             //                                                bias_noise_model));
 
-            // if (i % 10 == 0)
-            if ((i + 1) % 10 == 0)
-            {
-                std::cout << "Adding aiding measurement...\n";
-                noiseModel::Diagonal::shared_ptr correction_noise =
-                    noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
-                GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
-                graph->add(gps_factor);
-            }
-
             prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
             initial_values.insert(X(correction_count), prop_state.pose());
             initial_values.insert(V(correction_count), prop_state.v());
             initial_values.insert(B(correction_count), prev_bias);
 
-            LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
-            Values result = optimizer.optimize();
+            if (optimise)
+            {
+                if ((i + 1) % 10 == 0)
+                {
+                    std::cout << "Adding aiding measurement...\n";
+                    noiseModel::Diagonal::shared_ptr correction_noise =
+                        noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
+                    GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
+                    // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
+                    graph->add(gps_factor);
+                }
 
-            // Override the beginning of the preintegration for the
-            prev_state = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
-            prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+                LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
+                Values result = optimizer.optimize();
+
+                // Override the beginning of the preintegration for the
+                prev_state = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
+                prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+            }
+            else
+            {
+                prev_state = prop_state;
+            }
 
             //            prev_state = prop_state;
 
@@ -228,8 +240,12 @@ int main()
             quat_error.normalize();
             Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
             current_orientation_error = euler_angle_error.norm();
-            std::cout << "Position error:" << current_position_error
-                      << " - Attitude error: " << current_orientation_error << "\n";
+
+            print_vector(gtsam_position, "Predicted position");
+            print_vector(true_position, "True position");
+
+            //            std::cout << "Position error:" << position_error.x() << ", " << position_error.y() << ", "
+            //                      << position_error.z() << " - Attitude error: " << current_orientation_error << "\n";
         }
 
         //        graph->print();
