@@ -173,7 +173,7 @@ int main()
 
         double output_time = 0.0;
         double dt = 0.01;
-        for (int i = 1; i < data.t.rows(); i++)
+        for (int i = 1; i < data.p_nb_n.cols(); i++)
         {
             correction_count++;
 
