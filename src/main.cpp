@@ -63,6 +63,7 @@ void print_vector(const Eigen::VectorXd &v, const std::string &name)
 {
     std::cout << name << " | X: " << v.x() << " Y: " << v.y() << " Z: " << v.z() << "\n";
 }
+
 Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &num_rows = std::nullopt)
 {
     Data data;
@@ -80,7 +81,7 @@ Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &
     return data;
 }
 
-const bool optimise = false;
+const bool optimise = true;
 
 /// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
 /// and look at speed
@@ -124,7 +125,7 @@ int main()
         noiseModel::Diagonal::shared_ptr bias_noise_model =
             noiseModel::Diagonal::Sigmas((Vector(6) << 0.5, 0.5, 0.5, 0.05, 0.05, 0.05).finished());
 
-        NonlinearFactorGraph *graph = new NonlinearFactorGraph();
+        auto *graph = new NonlinearFactorGraph();
 
         graph->add(PriorFactor<Pose3>(X(correction_count), prior_pose, prior_noise_model));
         graph->add(PriorFactor<Vector3>(V(correction_count), prior_velocity, velocity_noise_model));
@@ -207,7 +208,7 @@ int main()
                     std::cout << "Adding aiding measurement...\n";
                     noiseModel::Diagonal::shared_ptr correction_noise =
                         noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
-                    GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
+                    GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
                     // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
                     graph->add(gps_factor);
                 }
@@ -245,11 +246,11 @@ int main()
             Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
             current_orientation_error = euler_angle_error.norm();
 
-            print_vector(gtsam_position, "Predicted position");
-            print_vector(true_position, "True position");
+            // print_vector(gtsam_position, "Predicted position");
+            // print_vector(true_position, "True position");
 
-            //            std::cout << "Position error:" << position_error.x() << ", " << position_error.y() << ", "
-            //                      << position_error.z() << " - Attitude error: " << current_orientation_error << "\n";
+            std::cout << "Position error:" << current_position_error
+                      << " - Attitude error: " << current_orientation_error << "\n";
         }
 
         //        graph->print();
