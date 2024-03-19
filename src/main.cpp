@@ -12,6 +12,7 @@
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/navigation/NavState.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/BetweenFactor.h>
@@ -67,7 +68,7 @@ void print_vector(const Eigen::VectorXd &v, const std::string &name)
 Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &num_rows = std::nullopt)
 {
     Data data;
-    std::uint64_t rows = num_rows.has_value() ? num_rows.value() : 500;
+    std::uint64_t rows = num_rows.has_value() ? num_rows.value() : 100;
     data.types = m.col(0).transpose();
     data.p_nb_n = m.block(0, 1, rows, 3).transpose();
     data.v_ib_i = m.block(0, 4, rows, 3).transpose();
@@ -175,8 +176,10 @@ int main()
         double dt = 0.01;
         for (int i = 1; i < data.p_nb_n.cols(); i++)
         {
+            std::cout << "(" << i << ") Starting iteration...\n";
             correction_count++;
 
+            std::cout << "(" << i << ") Integrating measurement...\n";
             imu_preintegrated_->integrateMeasurement(data.f_meas.col(i), data.w_meas.col(i), dt);
 
             // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
@@ -185,9 +188,11 @@ int main()
             // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
             //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
 
+            std::cout << "(" << i << ") Creating combined IMU factor...\n";
             CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
                                             V(correction_count),     B(correction_count - 1), B(correction_count),
                                             *preint_imu_combined};
+            std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
             graph->add(imu_factor);
 
             // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
@@ -196,7 +201,9 @@ int main()
             // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
             //                                                bias_noise_model));
 
+            std::cout << "(" << i << ") Predicition...\n";
             prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
+            std::cout << "(" << i << ") Insert prediction into values...\n";
             initial_values.insert(X(correction_count), prop_state.pose());
             initial_values.insert(V(correction_count), prop_state.v());
             initial_values.insert(B(correction_count), prev_bias);
@@ -205,9 +212,20 @@ int main()
             {
                 if ((i + 1) % 10 == 0)
                 {
-                    std::cout << "Adding aiding measurement...\n";
+                    std::cout << "(" << i << ") Add GNSS factor for aiding measurement...\n";
                     noiseModel::Diagonal::shared_ptr correction_noise =
                         noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
+
+                    Eigen::VectorXd pos = data.p_nb_n.col(i);
+                    Eigen::VectorXd meas = data.z_GNSS.col(i);
+
+                    double pos_x = pos.x();
+                    double pos_y = pos.y();
+                    double pos_z = pos.z();
+                    double meas_x = meas.x();
+                    double meas_y = meas.y();
+                    double meas_z = meas.z();
+
                     GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
                     // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
                     graph->add(gps_factor);
@@ -249,11 +267,14 @@ int main()
             // print_vector(gtsam_position, "Predicted position");
             // print_vector(true_position, "True position");
 
-            std::cout << "Position error:" << current_position_error
+            std::cout << "(" << i << ")"
+                      << " Position error:" << current_position_error
                       << " - Attitude error: " << current_orientation_error << "\n";
         }
 
-        //        graph->print();
+        Marginals marginals{*graph, initial_values};
+        GaussianFactor::shared_ptr result = marginals.marginalFactor(X(correction_count));
+        result->print();
     }
     catch (std::invalid_argument &e)
     {
