@@ -17,6 +17,8 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/slam/BetweenFactor.h>
 
+#include <cmath>
+
 using namespace gtsam;
 
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
@@ -81,6 +83,18 @@ Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &
     data.z_GNSS = m.block(0, 24, rows, 3).transpose();
     return data;
 }
+
+double rad2deg( double rad )
+{
+    return rad*180/M_PI;
+}
+
+double deg2rad( double deg )
+{
+    return deg/180*M_PI;
+}
+
+
 
 const bool optimise = true;
 
