@@ -288,21 +288,19 @@ int main()
             // Reset the preintegration object
             imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
 
-            // Print out the position and orientation error for
-            // comparison
-            Vector3 gtsam_position      = prev_state.pose().translation();
-            Vector3 true_position       = data.p_nb_n.col(i);
-            Vector3 position_error      = gtsam_position - true_position;
-            current_position_error      = position_error.norm();
+            // Print out the position, orientation and velocity error for comparison + bias values
+            Vector3 gtsam_position          = prev_state.pose().translation();
+            Vector3 true_position           = data.p_nb_n.col(i);
+            Vector3 position_error          = gtsam_position - true_position;
+            current_position_error          = position_error.norm();
 
-            Quaternion gtsam_quat = prev_state.pose().rotation().toQuaternion();
-            Quaternion true_quat =
-                Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2], data.q_nb.col(i)[3])
-                    .toQuaternion();
-            Quaternion quat_error = gtsam_quat * true_quat.inverse();
+            Quaternion gtsam_quat           = prev_state.pose().rotation().toQuaternion();
+            Quaternion true_quat            = Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2], data.q_nb.col(i)[3]).toQuaternion();
+            //Quaternion quat_error           = gtsam_quat * true_quat.inverse();
+            Quaternion quat_error           = gtsam_quat.inverse() * true_quat;
             quat_error.normalize();
             Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
-            current_orientation_error = euler_angle_error.norm();
+            current_orientation_error       = euler_angle_error.norm();
 
             Vector3 true_velocity           = data.v_ib_i.col(i);
             Vector3 gtsam_velocity          = prev_state.velocity();
