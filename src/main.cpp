@@ -19,6 +19,9 @@
 
 #include <cmath>
 
+#include <fstream>
+#include <string>
+
 using namespace gtsam;
 
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
@@ -95,8 +98,31 @@ double deg2rad( double deg )
 }
 
 
+std::string read_data_source_file_name()
+{
+    std::string data_file_name;
+
+    // Read from the text file
+    std::ifstream MyReadFile("config.txt");
+
+    // Use a while loop together with the getline() function to read the file line by line
+    std::cout << "Data file name: ";
+    while (getline (MyReadFile, data_file_name)) 
+    {
+        // Output the text from the file
+        std::cout << data_file_name;
+    }
+    std::cout << std::endl;
+    // Close the file
+    MyReadFile.close();
+
+    return data_file_name;
+}
+
+
 
 const bool optimise = true;
+//const bool optimise = false;
 
 /// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
 /// and look at speed
@@ -109,7 +135,7 @@ int main()
     {
         /// NOTE: This is where my data file is, extract_data shows format, path
         /// needs to be updated
-        Eigen::MatrixXd m = read_CSV("/Users/ghms/ws/ntnu/ins_simulator/src/test_data.csv");
+        Eigen::MatrixXd m = read_CSV( read_data_source_file_name() );
         Data data = extract_data(m);
 
         // Set the prior based on data
