@@ -192,8 +192,6 @@ int main()
             CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
                                             V(correction_count),     B(correction_count - 1), B(correction_count),
                                             *preint_imu_combined};
-            std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
-            graph->add(imu_factor);
 
             // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
 
@@ -210,6 +208,8 @@ int main()
 
             if (optimise)
             {
+                std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
+                graph->add(imu_factor);
                 if ((i + 1) % 10 == 0)
                 {
                     std::cout << "(" << i << ") Add GNSS factor for aiding measurement...\n";
