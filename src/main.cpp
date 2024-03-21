@@ -323,6 +323,13 @@ int main()
             Marginals marginals{*graph, initial_values};
             GaussianFactor::shared_ptr result = marginals.marginalFactor(X(correction_count));
             result->print();
+
+            auto covar_pose = marginals.marginalCovariance(X(correction_count));
+            std::cout << "Pose Covariance:\n" << covar_pose << std::endl;
+            auto covar_vel = marginals.marginalCovariance(V(correction_count));
+            std::cout << "Velocity Covariance:\n" << covar_vel << std::endl;
+            auto covar_bias = marginals.marginalCovariance(B(correction_count));
+            std::cout << "Bias Covariance:\n" << covar_bias << std::endl;
         }
     }
     catch (std::invalid_argument &e)
