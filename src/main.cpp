@@ -206,6 +206,14 @@ int main()
         /// correct
         imuBias::ConstantBias prev_bias = prior_imu_bias;
 
+        Marginals marginals_init{*graph, initial_values};
+        auto covar_pose_init = marginals_init.marginalCovariance(X(correction_count));
+        std::cout << "Initial Pose Covariance:\n" << covar_pose_init << std::endl;
+        auto covar_vel_init  = marginals_init.marginalCovariance(V(correction_count));
+        std::cout << "Initial Velocity Covariance:\n" << covar_vel_init  << std::endl;
+        auto covar_bias_init  = marginals_init.marginalCovariance(B(correction_count));
+        std::cout << "Initial Bias Covariance:\n" << covar_bias_init << std::endl;
+
         // Keep track of the total error over the entire run for a simple performance metric.
         double current_position_error = 0.0;
         double current_orientation_error = 0.0;
