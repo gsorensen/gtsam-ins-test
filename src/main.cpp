@@ -290,10 +290,10 @@ int main()
 
             // Print out the position and orientation error for
             // comparison
-            Vector3 gtsam_position = prev_state.pose().translation();
-            Vector3 true_position = data.p_nb_n.col(i);
-            Vector3 position_error = gtsam_position - true_position;
-            current_position_error = position_error.norm();
+            Vector3 gtsam_position      = prev_state.pose().translation();
+            Vector3 true_position       = data.p_nb_n.col(i);
+            Vector3 position_error      = gtsam_position - true_position;
+            current_position_error      = position_error.norm();
 
             Quaternion gtsam_quat = prev_state.pose().rotation().toQuaternion();
             Quaternion true_quat =
@@ -304,12 +304,20 @@ int main()
             Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
             current_orientation_error = euler_angle_error.norm();
 
+            Vector3 true_velocity           = data.v_ib_i.col(i);
+            Vector3 gtsam_velocity          = prev_state.velocity();
+            Vector3 velocity_error          = gtsam_velocity - true_velocity;
+            double current_velocity_error   = velocity_error.norm();
+
+
             // print_vector(gtsam_position, "Predicted position");
             // print_vector(true_position, "True position");
 
             std::cout << "(" << i << ")"
                       << " Position error [m]:" << current_position_error
-                      << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1) << "\n";
+                      << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1)
+                      << " - Velocity error [m/s]:" << current_velocity_error 
+                      << " - Bias values " << prev_bias << std::endl; 
         }
 
         if (optimise)
