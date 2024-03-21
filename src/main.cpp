@@ -286,9 +286,12 @@ int main()
                       << " - Attitude error: " << current_orientation_error << "\n";
         }
 
-        Marginals marginals{*graph, initial_values};
-        GaussianFactor::shared_ptr result = marginals.marginalFactor(X(correction_count));
-        result->print();
+        if (optimise)
+        {
+            Marginals marginals{*graph, initial_values};
+            GaussianFactor::shared_ptr result = marginals.marginalFactor(X(correction_count));
+            result->print();
+        }
     }
     catch (std::invalid_argument &e)
     {
