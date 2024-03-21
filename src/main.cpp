@@ -308,8 +308,8 @@ int main()
             // print_vector(true_position, "True position");
 
             std::cout << "(" << i << ")"
-                      << " Position error:" << current_position_error
-                      << " - Attitude error: " << current_orientation_error << "\n";
+                      << " Position error [m]:" << current_position_error
+                      << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1) << "\n";
         }
 
         if (optimise)
