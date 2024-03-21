@@ -156,15 +156,13 @@ int main()
         // Assemble prior noise model and add it to the NonlinearFactorGraph
         /// NOTE: Based on definition of pose, assumed that attitude
         /// uncertainty comes before position uncertainity
-        noiseModel::Diagonal::shared_ptr prior_noise_model =
-            noiseModel::Diagonal::Sigmas((Vector(6) << 0.5, 0.5, 0.5, 1.5, 1.5, 5).finished());
+        noiseModel::Diagonal::shared_ptr prior_noise_model = noiseModel::Diagonal::Sigmas((Vector(6) << deg2rad(0.01), deg2rad(0.01), deg2rad(0.01), 0.1, 0.1, 0.1).finished());
         // noiseModel::Diagonal::Sigmas((Vector(6) << 1.5, 1.5, 5, 0.5, 0.5, 0.5).finished());
 
-        noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3, 0.2);
+        noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3, 0.01);
 
         /// NOTE: Assumption is that acceleormeter noise is before gyroscope
-        noiseModel::Diagonal::shared_ptr bias_noise_model =
-            noiseModel::Diagonal::Sigmas((Vector(6) << 0.5, 0.5, 0.5, 0.05, 0.05, 0.05).finished());
+        noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Diagonal::Sigmas((Vector(6) << 0.5, 0.5, 0.5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1)).finished());
 
         auto *graph = new NonlinearFactorGraph();
 
