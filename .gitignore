@@ -4,3 +4,5 @@ compile_commands.json
 .cache/**
 
 src/.DS_Store
+
+.DS_Store
