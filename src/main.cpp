@@ -360,22 +360,24 @@ int main()
             Vector3 velocity_error          = gtsam_velocity - true_velocity;
             double current_velocity_error   = velocity_error.norm();
 
-
             // print_vector(gtsam_position, "Predicted position");
             // print_vector(true_position, "True position");
 
-            std::cout << "(" << i << ")"
+            cout << "(" << i << ")"
                       << " Position error [m]:" << current_position_error
                       << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1)
                       << " - Velocity error [m/s]:" << current_velocity_error 
                       << " - Bias values " << prev_bias << std::endl; 
         }
 
+        cout << "Printing marginals" << endl;
         if (optimise)
         {
-            Marginals marginals{*graph, initial_values};
-            GaussianFactor::shared_ptr result = marginals.marginalFactor(X(correction_count));
-            result->print();
+            imu_preintegrated_->print();
+
+            Marginals marginals{*graph, result};
+            GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
+            results->print();
 
             auto covar_pose = marginals.marginalCovariance(X(correction_count));
             std::cout << "Pose Covariance:\n" << covar_pose << std::endl;
@@ -383,6 +385,9 @@ int main()
             std::cout << "Velocity Covariance:\n" << covar_vel << std::endl;
             auto covar_bias = marginals.marginalCovariance(B(correction_count));
             std::cout << "Bias Covariance:\n" << covar_bias << std::endl;
+        }else
+        {
+            imu_preintegrated_->print();
         }
     }
     catch (std::invalid_argument &e)
