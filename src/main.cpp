@@ -23,6 +23,8 @@
 #include <string>
 
 using namespace gtsam;
+using std::cout;
+using std::endl;
 
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
 using symbol_shorthand::V; // velocity (xdot, ydot, zdot)
