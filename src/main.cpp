@@ -149,6 +149,7 @@ int main()
         imuBias::ConstantBias prior_imu_bias;
 
         Values initial_values;
+        Values result;
         std::uint64_t correction_count = 0;
 
         initial_values.insert(X(correction_count), prior_pose);
@@ -225,76 +226,120 @@ int main()
         for (int i = 1; i < data.p_nb_n.cols(); i++)
         {
             std::cout << "(" << i << ") Starting iteration...\n";
-            correction_count++;
-
+            
             std::cout << "(" << i << ") Integrating measurement...\n";
             imu_preintegrated_->integrateMeasurement(data.f_meas.col(i), data.w_meas.col(i), dt);
+            //imu_preintegrated_->print();
 
-            // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
-            auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
+            cout << "(" << i << ") Predicition...\n";
+            //prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
+            // "Manual predicition"
+            Vector3 pos_prev = prev_state.pose().translation();
+            Vector3 vel_prev = prev_state.velocity();
+            Rot3 rot_prev = prev_state.pose().rotation();
+            
+            Vector3 inc_ang = ( data.w_meas.col(i) - prev_bias.gyroscope () )*dt;
+            Rot3 delta_rot = Rot3::Expmap(inc_ang);
+            /*
+            double inc_ang_mag = inc_ang.norm();
+            Rot3 delta_rot;
+            if ( inc_ang_mag > 1e-8)
+            {
+                delta_rot = Rot3::Rodrigues( inc_ang(0), inc_ang(1), inc_ang(2) );
+            }
+            else
+            {
+                Matrix3 S_delta = skewSymmetric( inc_ang(0), inc_ang(1), inc_ang(2) );
+                //delta_rot = Rot3::Identity() + S_delta;
+            }
+            */
+            Rot3 rot_new = rot_prev*delta_rot;
+            rot_new.normalized();
+            //rot_new = Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2], data.q_nb.col(i)[3]);
+            
+            Vector3 acc_new = rot_new*( data.f_meas.col(i) - prev_bias.accelerometer() ) + p->getGravity() ;
+            Vector3 vel_new = vel_prev + acc_new*dt;
+            Vector3 pos_new = pos_prev + ( vel_new + vel_prev )*dt/2;
 
-            // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-            //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
-
-            std::cout << "(" << i << ") Creating combined IMU factor...\n";
-            CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-                                            V(correction_count),     B(correction_count - 1), B(correction_count),
-                                            *preint_imu_combined};
-
-            // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
-
-            //// NOTE: This should NOT be added when using combined measurements
-            // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
-            //                                                bias_noise_model));
-
-            std::cout << "(" << i << ") Predicition...\n";
-            prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
-            std::cout << "(" << i << ") Insert prediction into values...\n";
-            initial_values.insert(X(correction_count), prop_state.pose());
-            initial_values.insert(V(correction_count), prop_state.v());
-            initial_values.insert(B(correction_count), prev_bias);
+            prop_state = NavState( rot_new, pos_new, vel_new);
 
             if (optimise)
             {
-                std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
-                graph->add(imu_factor);
+                // applying corrections
                 if ((i + 1) % 10 == 0)
                 {
+ 
+                    correction_count++;
+
+                    // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
+                    auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
+
+                    // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+                    //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
+
+                    std::cout << "(" << i << ") Creating combined IMU factor...\n";
+                    CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+                                                    V(correction_count),     B(correction_count - 1), B(correction_count),
+                                                    *preint_imu_combined};
+
+                    std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
+                    graph->add(imu_factor);
+                    // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
+
+                    //// NOTE: This should NOT be added when using combined measurements
+                    // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count), zero_bias,
+                    //                                                bias_noise_model));
+
+                    std::cout << "(" << i << ") Insert prediction into values...\n";
+                    initial_values.insert(X(correction_count), prop_state.pose());
+                    initial_values.insert(V(correction_count), prop_state.v());
+                    initial_values.insert(B(correction_count), prev_bias);
+
+
                     std::cout << "(" << i << ") Add GNSS factor for aiding measurement...\n";
-                    noiseModel::Diagonal::shared_ptr correction_noise =
-                        noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
+                    noiseModel::Diagonal::shared_ptr correction_noise = noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
 
+                    /*
                     Eigen::VectorXd pos = data.p_nb_n.col(i);
-                    Eigen::VectorXd meas = data.z_GNSS.col(i);
-
+                    Eigen::VectorXd meas = data.z_GNSS.col(i);                    
                     double pos_x = pos.x();
                     double pos_y = pos.y();
                     double pos_z = pos.z();
                     double meas_x = meas.x();
                     double meas_y = meas.y();
                     double meas_z = meas.z();
-
+                    */
                     GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
-                    // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
+                    //GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
                     graph->add(gps_factor);
+
+                    cout << "(" << i << ") Optimising...\n";
+                    LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
+                    result = optimizer.optimize();
+
+                    cout << "(" << i << ") Overriding preintegration and resettting prev_state...\n";
+                    // Override the beginning of the preintegration for the
+                    prev_state  = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
+                    prev_bias   = result.at<imuBias::ConstantBias>(B(correction_count));
+
+                    //cout << "(" << i << ") Preintegration before reset \n";
+                    //imu_preintegrated_->print();
+
+                    // Reset the preintegration object
+                    imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
+
+                    //cout << "(" << i << ") Preintegration after reset \n";
+                    //imu_preintegrated_->print();
                 }
-
-                LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
-                Values result = optimizer.optimize();
-
-                // Override the beginning of the preintegration for the
-                prev_state = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
-                prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+                else
+                {
+                    prev_state = prop_state;
+                }
             }
             else
             {
                 prev_state = prop_state;
             }
-
-            //            prev_state = prop_state;
-
-            // Reset the preintegration object
-            imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
 
             // Print out the position, orientation and velocity error for comparison + bias values
             Vector3 gtsam_position          = prev_state.pose().translation();
