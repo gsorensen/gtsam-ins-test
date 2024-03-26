@@ -11,6 +11,8 @@
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/navigation/NavState.h>
+#include <gtsam/nonlinear/ISAM2.h>
+#include <gtsam_unstable/nonlinear/IncrementalFixedLagSmoother.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -18,9 +20,10 @@
 #include <gtsam/slam/BetweenFactor.h>
 
 #include <cmath>
-
 #include <fstream>
 #include <string>
+#include <chrono>
+using namespace std::chrono;
 
 using namespace gtsam;
 using std::cout;
@@ -29,6 +32,10 @@ using std::endl;
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
 using symbol_shorthand::V; // velocity (xdot, ydot, zdot)
 using symbol_shorthand::X; // pose (x, y, z, r, p, y)
+
+typedef Eigen::Matrix<double, 15, 15 > Matrix15d;
+
+enum Opt { iSam2, fixLag, LM };
 
 PreintegrationType *imu_preintegrated_;
 
@@ -122,15 +129,28 @@ std::string read_data_source_file_name()
 }
 
 
+/* CONSTANTS*/
+
+//const Opt opt = iSam2;
+const Opt opt = fixLag;
+//const Opt opt = LM;
 
 const bool optimise = true;
 //const bool optimise = false;
+
+//const bool print_marginals = true;
+const bool print_marginals = false;
+
+const double fixed_lag = 5.0; // fixed smoother lag
+
 
 /// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
 /// and look at speed
 
 int main()
 {
+
+
     /// NOTE: Try except used because GTSAM under the hood may throw an
     /// exception if it receives an invalid argument.
     try
@@ -142,8 +162,7 @@ int main()
 
         // Set the prior based on data
         Point3 prior_point{data.p_nb_n.col(0)};
-        Rot3 prior_rotation =
-            Rot3::Quaternion(data.q_nb.col(0)[0], data.q_nb.col(0)[1], data.q_nb.col(0)[2], data.q_nb.col(0)[3]);
+        Rot3 prior_rotation = Rot3::Quaternion(data.q_nb.col(0)[0], data.q_nb.col(0)[1], data.q_nb.col(0)[2], data.q_nb.col(0)[3]);
         Pose3 prior_pose{prior_rotation, prior_point};
         Vector3 prior_velocity{data.v_ib_i.col(0)};
         imuBias::ConstantBias prior_imu_bias;
@@ -152,9 +171,66 @@ int main()
         Values result;
         std::uint64_t correction_count = 0;
 
+        ISAM2* isam2 = 0;
+        IncrementalFixedLagSmoother* fixed_lag_smoother;
+
+        ISAM2Params isam2_params;
+        switch (opt) {
+        case iSam2:
+            printf("Using ISAM2\n");
+            isam2_params.relinearizeThreshold   = 0.001;
+            isam2_params.relinearizeSkip        = 1;
+            isam2_params.findUnusedFactorSlots  = 1;
+            //isam2_params.setFactorization("QR");
+            
+            /*Specifies whether to use QR or CHOESKY numerical factorization (default: CHOLESKY). 
+            Cholesky is faster but potentially numerically unstable for poorly-conditioned problems, 
+            which can occur when uncertainty is very low in some variables (or dimensions of 
+            variables) and very high in others. QR is slower but more numerically stable in 
+            poorly-conditioned problems. We suggest using the default of Cholesky unless gtsam 
+            sometimes throws IndefiniteLinearSystemException when your problem's Hessian is actually 
+            positive definite. For positive definite problems, numerical error accumulation can 
+            cause the problem to become numerically negative or indefinite as solving proceeds, 
+            especially when using Cholesky. */
+            isam2 = new ISAM2(isam2_params);
+            break;
+        case fixLag:
+            printf("Using ISAM2 Fixed lag smoother\n");
+            isam2_params.relinearizeThreshold   = 0.001;
+            isam2_params.relinearizeSkip        = 1;
+            isam2_params.findUnusedFactorSlots  = 1;
+            //isam2_params.setFactorization("QR");
+            
+            /*Specifies whether to use QR or CHOESKY numerical factorization (default: CHOLESKY). 
+            Cholesky is faster but potentially numerically unstable for poorly-conditioned problems, 
+            which can occur when uncertainty is very low in some variables (or dimensions of 
+            variables) and very high in others. QR is slower but more numerically stable in 
+            poorly-conditioned problems. We suggest using the default of Cholesky unless gtsam 
+            sometimes throws IndefiniteLinearSystemException when your problem's Hessian is actually 
+            positive definite. For positive definite problems, numerical error accumulation can 
+            cause the problem to become numerically negative or indefinite as solving proceeds, 
+            especially when using Cholesky. */
+            fixed_lag_smoother = new IncrementalFixedLagSmoother(fixed_lag, isam2_params);
+            break;
+        case LM:
+            printf("Using Levenberg Marquardt Optimizer\n");
+            break;
+        default:
+            printf("Not supported\n");
+            return -1;
+        }
+
         initial_values.insert(X(correction_count), prior_pose);
         initial_values.insert(V(correction_count), prior_velocity);
         initial_values.insert(B(correction_count), prior_imu_bias);
+        
+        //FixedLagSmoother smoother;
+        //smoother = new IncrementalFixedLagSmoother(lag, isam2_params);  
+        FixedLagSmoother::KeyTimestampMap smoother_timestamps_maps;
+        smoother_timestamps_maps[X(correction_count)] = 0.0;
+        smoother_timestamps_maps[V(correction_count)] = 0.0;
+        smoother_timestamps_maps[B(correction_count)] = 0.0;
+
 
         // Assemble prior noise model and add it to the NonlinearFactorGraph
         /// NOTE: Based on definition of pose, assumed that attitude
@@ -209,13 +285,27 @@ int main()
         /// correct
         imuBias::ConstantBias prev_bias = prior_imu_bias;
 
+        // Covariance matrices
+        Eigen::MatrixXd P_X;
+        Eigen::MatrixXd P_V;
+        Eigen::MatrixXd P_B;
+
         Marginals marginals_init{*graph, initial_values};
-        auto covar_pose_init = marginals_init.marginalCovariance(X(correction_count));
-        std::cout << "Initial Pose Covariance:\n" << covar_pose_init << std::endl;
-        auto covar_vel_init  = marginals_init.marginalCovariance(V(correction_count));
-        std::cout << "Initial Velocity Covariance:\n" << covar_vel_init  << std::endl;
-        auto covar_bias_init  = marginals_init.marginalCovariance(B(correction_count));
-        std::cout << "Initial Bias Covariance:\n" << covar_bias_init << std::endl;
+        P_X = marginals_init.marginalCovariance(X(correction_count));
+        P_V = marginals_init.marginalCovariance(V(correction_count));
+        P_B = marginals_init.marginalCovariance(B(correction_count));
+        cout << "Initial Pose Covariance:\n"       << P_X << std::endl;
+        cout << "Initial Velocity Covariance:\n"   << P_V << std::endl;
+        cout << "Initial Bias Covariance:\n"       << P_B << std::endl;
+
+        static const size_t N = data.p_nb_n.cols();
+        cout << N << endl;
+        Matrix15d P0 = Eigen::MatrixXd::Zero(15,15);
+        P0.block<6,6>(0,0) = P_X;
+        P0.block<3,3>(6,6) = P_V;
+        P0.block<6,6>(9,9) = P_B;
+        std::list<Matrix15d> P = {};
+        P.push_back( P0 );
 
         // Keep track of the total error over the entire run for a simple performance metric.
         double current_position_error = 0.0;
@@ -223,8 +313,11 @@ int main()
 
         double output_time = 0.0;
         double dt = 0.01;
-        for (int i = 1; i < data.p_nb_n.cols(); i++)
+
+        auto start_filtering = std::chrono::system_clock::now();
+        for (int i = 1; i < N; i++)
         {
+            output_time += dt;
             std::cout << "(" << i << ") Starting iteration...\n";
             
             std::cout << "(" << i << ") Integrating measurement...\n";
@@ -309,18 +402,103 @@ int main()
                     double meas_y = meas.y();
                     double meas_z = meas.z();
                     */
-                    GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
-                    //GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
+                    //GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
+                    GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
                     graph->add(gps_factor);
 
                     cout << "(" << i << ") Optimising...\n";
-                    LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
-                    result = optimizer.optimize();
+                    auto start_optimisation  = std::chrono::system_clock::now();
+                    switch (opt) {
+                        case iSam2:
+                        {
+                            isam2->update(*graph, initial_values);
+                            result = isam2->calculateEstimate();
 
+                            P_X = isam2->marginalCovariance(X(correction_count));
+                            P_V = isam2->marginalCovariance(V(correction_count));
+                            P_B = isam2->marginalCovariance(B(correction_count));
+                            if (print_marginals )
+                            {
+                                std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
+                                gtsam::print( P_X, print_string);
+                                print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
+                                gtsam::print( P_V, print_string);
+                                print_string = "(" + std::to_string(i) + ") Bias Covariance:";
+                                gtsam::print( P_B, print_string);
+                            }
+
+                            graph->resize(0);
+                            initial_values.clear();
+                            break;
+                        }
+                        case fixLag:
+                        {
+                            smoother_timestamps_maps[X(correction_count)] = output_time;
+                            smoother_timestamps_maps[V(correction_count)] = output_time;
+                            smoother_timestamps_maps[B(correction_count)] = output_time;
+
+                            fixed_lag_smoother->update(*graph, initial_values, smoother_timestamps_maps );
+                            result = fixed_lag_smoother->calculateEstimate();
+                            
+                            P_X = fixed_lag_smoother->marginalCovariance(X(correction_count));
+                            P_V = fixed_lag_smoother->marginalCovariance(V(correction_count));
+                            P_B = fixed_lag_smoother->marginalCovariance(B(correction_count));
+                            if (print_marginals )
+                            {
+                                std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
+                                gtsam::print( P_X, print_string);
+                                print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
+                                gtsam::print( P_V, print_string);
+                                print_string = "(" + std::to_string(i) + ") Bias Covariance:";
+                                gtsam::print( P_B, print_string);
+                            }
+
+                            // reset the graph
+                            graph->resize(0);
+                            initial_values.clear();
+                            smoother_timestamps_maps.clear();
+                            break;
+                        }
+                        case LM:
+                        {
+                            LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
+                            result = optimizer.optimize();
+                        
+                            Marginals marginals{*graph, result};
+                            GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
+                            P_X = marginals.marginalCovariance(X(correction_count));
+                            P_V = marginals.marginalCovariance(V(correction_count));
+                            P_B = marginals.marginalCovariance(B(correction_count));
+                            if (print_marginals)
+                            {
+                                results->print();
+                                std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
+                                gtsam::print( P_X, print_string);
+                                print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
+                                gtsam::print( P_V, print_string);
+                                print_string = "(" + std::to_string(i) + ") Bias Covariance:";
+                                gtsam::print( P_B, print_string);
+                            }
+                            break;
+                        }
+                        default:
+                            return -1;
+                    }
+                    Matrix15d Pk = Eigen::MatrixXd::Zero(15,15);
+                    Pk.block<6,6>(0,0) = P_X;
+                    Pk.block<3,3>(6,6) = P_V;
+                    Pk.block<6,6>(9,9) = P_B;
+                    P.push_back( Pk );     
                     cout << "(" << i << ") Overriding preintegration and resettting prev_state...\n";
                     // Override the beginning of the preintegration for the
-                    prev_state  = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
-                    prev_bias   = result.at<imuBias::ConstantBias>(B(correction_count));
+
+                    //prev_state  = NavState(result.at<Pose3>(X(correction_count)), result.at<Vector3>(V(correction_count)));
+                    Pose3 pose_corrected    = result.at<Pose3>(X(correction_count));
+                    Rot3 rot_corrected      = pose_corrected.rotation().normalized();
+                    Point3 pos_corrected    = pose_corrected.translation();
+                    Vector3 vel_corrected   = result.at<Vector3>(V(correction_count));
+                    prev_state              = NavState( rot_corrected, pos_corrected, vel_corrected);
+                    prev_bias               = result.at<imuBias::ConstantBias>(B(correction_count));
 
                     //cout << "(" << i << ") Preintegration before reset \n";
                     //imu_preintegrated_->print();
@@ -330,14 +508,25 @@ int main()
 
                     //cout << "(" << i << ") Preintegration after reset \n";
                     //imu_preintegrated_->print();
+                    auto end_optimisation = std::chrono::system_clock::now();
+                    std::chrono::duration<double> elapsed_opt = end_optimisation - start_optimisation;
+                    cout << "(" << i << ") Optimisation time elapsed: " << elapsed_opt.count() << "[s]\n";
                 }
                 else
                 {
+                    Matrix15d Pk = Eigen::MatrixXd::Zero(15,15);
+                    //Pk = imu_preintegrated_->preintMeasCov(); // does not compile. 
+                    // no member named 'preintMeasCov' in 'gtsam::ManifoldPreintegration'
+                    P.push_back( Pk );
                     prev_state = prop_state;
                 }
             }
             else
             {
+                Matrix15d Pk = Eigen::MatrixXd::Zero(15,15);
+                //Pk = imu_preintegrated_->preintMeasCov(); // does not compile. 
+                // no member named 'preintMeasCov' in 'gtsam::ManifoldPreintegration'
+                P.push_back( Pk );
                 prev_state = prop_state;
             }
 
@@ -374,21 +563,29 @@ int main()
         if (optimise)
         {
             imu_preintegrated_->print();
-
+            /*
             Marginals marginals{*graph, result};
             GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
             results->print();
 
-            auto covar_pose = marginals.marginalCovariance(X(correction_count));
-            std::cout << "Pose Covariance:\n" << covar_pose << std::endl;
-            auto covar_vel = marginals.marginalCovariance(V(correction_count));
-            std::cout << "Velocity Covariance:\n" << covar_vel << std::endl;
-            auto covar_bias = marginals.marginalCovariance(B(correction_count));
-            std::cout << "Bias Covariance:\n" << covar_bias << std::endl;
+            auto P_Xe = marginals.marginalCovariance(X(correction_count));
+            std::cout << "Pose Covariance:\n" << P_Xe << std::endl;
+            auto P_V = marginals.marginalCovariance(V(correction_count));
+            std::cout << "Velocity Covariance:\n" << P_V << std::endl;
+            auto P_B = marginals.marginalCovariance(B(correction_count));
+            std::cout << "Bias Covariance:\n" << P_B << std::endl;
+            */
         }else
         {
             imu_preintegrated_->print();
         }
+        auto end_filtering      = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_seconds = end_filtering - start_filtering;
+        std::cout << "Elapsed time: " << elapsed_seconds.count() << "[s] - Time horizon data: "
+        << (data.p_nb_n.cols()+1)*dt  << "[s]\n";
+        
+
+
     }
     catch (std::invalid_argument &e)
     {
