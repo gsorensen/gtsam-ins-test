@@ -1,1 +1,1 @@
-/Users/thb/Library/CloudStorage/OneDrive-NTNU/PhD candiates/PhD Glen Hjelmerud Mørkbak Sørensen/Code/gtsam-ins-test/src/test_data_perfect.csv
+/Users/thb/Library/CloudStorage/OneDrive-NTNU/PhD candiates/PhD Glen Hjelmerud Mørkbak Sørensen/Code/gtsam-ins-test/src/no_noise_no_bias_test_data.csv
