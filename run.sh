@@ -1,1 +1,1 @@
-./build/gtsam-conan-project
+./build/gtsam-conan-project $1
