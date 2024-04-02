@@ -46,6 +46,7 @@ enum Opt
 PreintegrationType *imu_preintegrated_;
 
 // Define a struct to hold the submatrices
+// Estimated states share the coordinate frame with the true states
 struct Data
 {
     Eigen::VectorXd types;
@@ -58,6 +59,11 @@ struct Data
     Eigen::MatrixXd b_ars;
     Eigen::VectorXd t;
     Eigen::MatrixXd z_GNSS;
+    Eigen::MatrixXd p_hat;
+    Eigen::MatrixXd v_hat;
+    Eigen::MatrixXd q_hat;
+    Eigen::MatrixXd b_acc_hat;
+    Eigen::MatrixXd b_ars_hat;
 };
 
 Eigen::MatrixXd read_CSV(const std::string &filename)
@@ -105,6 +111,26 @@ Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &
     data.b_ars = m.block(0, 20, rows, 3).transpose();
     data.t = m.col(23).transpose();
     data.z_GNSS = m.block(0, 24, rows, 3).transpose();
+
+    // NOTE: Temp check to use generated data before change, simply set the
+    // estimates to true states if the data file doesn't contain them
+    if (m.cols() == 43)
+    {
+        data.p_hat = m.block(0, 27, rows, 3).transpose();
+        data.v_hat = m.block(0, 30, rows, 3).transpose();
+        data.q_hat = m.block(0, 33, rows, 4).transpose();
+        data.b_acc_hat = m.block(0, 37, rows, 3).transpose();
+        data.b_ars_hat = m.block(0, 40, rows, 3).transpose();
+    }
+    else
+    {
+        data.p_hat = m.block(0, 1, rows, 3).transpose();
+        data.v_hat = m.block(0, 4, rows, 3).transpose();
+        data.q_hat = m.block(0, 7, rows, 4).transpose();
+        data.b_acc_hat = m.block(0, 17, rows, 3).transpose();
+        data.b_ars_hat = m.block(0, 20, rows, 3).transpose();
+    }
+
     return data;
 }
 
