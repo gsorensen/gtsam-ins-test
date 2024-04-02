@@ -45,10 +45,7 @@ enum class Optimiser
     LM
 };
 
-PreintegrationType *imu_preintegrated_;
-
 /* CONSTANTS*/
-
 // const Opt opt = iSam2;
 const Optimiser opt = Optimiser::fixLag;
 // const Opt opt = LM;
@@ -61,8 +58,34 @@ const bool print_marginals = false;
 
 const double fixed_lag = 5.0; // fixed smoother lag
 
-/// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
-/// and look at speed
+auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
+{
+    ISAM2Params params;
+    switch (opt)
+    {
+    case Optimiser::iSam2:
+        printf("Using ISAM2\n");
+        params.relinearizeThreshold = 0.001;
+        params.relinearizeSkip = 1;
+        params.findUnusedFactorSlots = true;
+        // params.setFactorization("QR");
+        break;
+    case Optimiser::fixLag:
+        printf("Using ISAM2 Fixed lag smoother\n");
+        params.relinearizeThreshold = 0.001;
+        params.relinearizeSkip = 1;
+        params.findUnusedFactorSlots = true;
+        // params.setFactorization("QR");
+        break;
+    case Optimiser::LM:
+        printf("Using LM\n");
+        break;
+    default:
+        break;
+    }
+
+    return params;
+}
 
 auto main(int argc, char *argv[]) -> int
 {
@@ -76,6 +99,7 @@ auto main(int argc, char *argv[]) -> int
     /// exception if it receives an invalid argument.
     try
     {
+        PreintegrationType *imu_preintegrated_;
         SimulationData data = parse_data(argv[1]).value();
 
         // Set the prior based on data
@@ -84,64 +108,18 @@ auto main(int argc, char *argv[]) -> int
             Rot3::Quaternion(data.q_nb.col(0)[0], data.q_nb.col(0)[1], data.q_nb.col(0)[2], data.q_nb.col(0)[3]);
         Pose3 prior_pose{prior_rotation, prior_point};
         Vector3 prior_velocity{data.v_ib_i.col(0)};
-        Vector3 acc_bias_true( -0.276839, -0.244186, 0.337360 );
-        Vector3 gyro_bias_true( -0.0028, 0.0021, -0.0032 );
-        imuBias::ConstantBias imu_bias_true( acc_bias_true, gyro_bias_true );
+        Vector3 acc_bias_true(-0.276839, -0.244186, 0.337360);
+        Vector3 gyro_bias_true(-0.0028, 0.0021, -0.0032);
+        imuBias::ConstantBias imu_bias_true(acc_bias_true, gyro_bias_true);
         imuBias::ConstantBias prior_imu_bias;
 
         Values initial_values;
         Values result;
         std::uint64_t correction_count = 0;
 
-        ISAM2 *isam2 = nullptr;
-        IncrementalFixedLagSmoother *fixed_lag_smoother;
-
-        ISAM2Params isam2_params;
-        switch (opt)
-        {
-        case Optimiser::iSam2:
-            printf("Using ISAM2\n");
-            isam2_params.relinearizeThreshold = 0.001;
-            isam2_params.relinearizeSkip = 1;
-            isam2_params.findUnusedFactorSlots = 1;
-            // isam2_params.setFactorization("QR");
-
-            /*Specifies whether to use QR or CHOESKY numerical factorization (default: CHOLESKY).
-            Cholesky is faster but potentially numerically unstable for poorly-conditioned problems,
-            which can occur when uncertainty is very low in some variables (or dimensions of
-            variables) and very high in others. QR is slower but more numerically stable in
-            poorly-conditioned problems. We suggest using the default of Cholesky unless gtsam
-            sometimes throws IndefiniteLinearSystemException when your problem's Hessian is actually
-            positive definite. For positive definite problems, numerical error accumulation can
-            cause the problem to become numerically negative or indefinite as solving proceeds,
-            especially when using Cholesky. */
-            isam2 = new ISAM2(isam2_params);
-            break;
-        case Optimiser::fixLag:
-            printf("Using ISAM2 Fixed lag smoother\n");
-            isam2_params.relinearizeThreshold = 0.001;
-            isam2_params.relinearizeSkip = 1;
-            isam2_params.findUnusedFactorSlots = 1;
-            // isam2_params.setFactorization("QR");
-
-            /*Specifies whether to use QR or CHOESKY numerical factorization (default: CHOLESKY).
-            Cholesky is faster but potentially numerically unstable for poorly-conditioned problems,
-            which can occur when uncertainty is very low in some variables (or dimensions of
-            variables) and very high in others. QR is slower but more numerically stable in
-            poorly-conditioned problems. We suggest using the default of Cholesky unless gtsam
-            sometimes throws IndefiniteLinearSystemException when your problem's Hessian is actually
-            positive definite. For positive definite problems, numerical error accumulation can
-            cause the problem to become numerically negative or indefinite as solving proceeds,
-            especially when using Cholesky. */
-            fixed_lag_smoother = new IncrementalFixedLagSmoother(fixed_lag, isam2_params);
-            break;
-        case Optimiser::LM:
-            printf("Using Levenberg Marquardt Optimizer\n");
-            break;
-        default:
-            printf("Not supported\n");
-            return -1;
-        }
+        ISAM2Params isam2_params = get_ISAM2_params(opt);
+        ISAM2 isam2 = ISAM2(isam2_params);
+        IncrementalFixedLagSmoother fixed_lag_smoother = IncrementalFixedLagSmoother(fixed_lag, isam2_params);
 
         initial_values.insert(X(correction_count), prior_pose);
         initial_values.insert(V(correction_count), prior_velocity);
@@ -185,19 +163,23 @@ auto main(int argc, char *argv[]) -> int
 
         /// TODO: What is this quantity related to in the "normal" INS case, is
         /// this a seperate tuning parameter not present there?
-        Matrix33 integration_error_cov      = Matrix33::Identity(3, 3) * 1e-10; // error committed in integrating position from velocities
-        Matrix66 bias_acc_omega_int         = Matrix::Identity(6, 6);
-        bias_acc_omega_int.block<3,3>(0,0)  = bias_acc_cov;
-        bias_acc_omega_int.block<3,3>(3,3)  = bias_omega_cov;
+        Matrix33 integration_error_cov =
+            Matrix33::Identity(3, 3) * 1e-10; // error committed in integrating position from velocities
+        Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6);
+        bias_acc_omega_int.block<3, 3>(0, 0) = bias_acc_cov;
+        bias_acc_omega_int.block<3, 3>(3, 3) = bias_omega_cov;
 
-        boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
+        boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p =
+            PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
 
-        p->accelerometerCovariance  = measured_acc_cov;         ///< continuous-time "Covariance" describing accelerometer bias random walk
-        p->integrationCovariance    = integration_error_cov;    ///<- error committed in integrating position from velocities
-        p->gyroscopeCovariance      = measured_omega_cov;       ///< continuous-time "Covariance" describing gyroscope bias random walk
-        p->biasAccCovariance        = bias_acc_cov;             ///< continuous-time "Covariance" describing accelerometer bias random walk
-        p->biasOmegaCovariance      = bias_omega_cov;           ///< continuous-time "Covariance" describing gyroscope bias random walk
-        p->biasAccOmegaInt          = bias_acc_omega_int;       ///< covariance of bias used as initial estimate.
+        p->accelerometerCovariance =
+            measured_acc_cov; ///< continuous-time "Covariance" describing accelerometer bias random walk
+        p->integrationCovariance = integration_error_cov; ///<- error committed in integrating position from velocities
+        p->gyroscopeCovariance =
+            measured_omega_cov;              ///< continuous-time "Covariance" describing gyroscope bias random walk
+        p->biasAccCovariance = bias_acc_cov; ///< continuous-time "Covariance" describing accelerometer bias random walk
+        p->biasOmegaCovariance = bias_omega_cov; ///< continuous-time "Covariance" describing gyroscope bias random walk
+        p->biasAccOmegaInt = bias_acc_omega_int; ///< covariance of bias used as initial estimate.
 
         // imu_preintegrated_ = new PreintegratedImuMeasurements(p, prior_imu_bias);
         imu_preintegrated_ = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
@@ -337,12 +319,12 @@ auto main(int argc, char *argv[]) -> int
                     switch (opt)
                     {
                     case Optimiser::iSam2: {
-                        isam2->update(*graph, initial_values);
-                        result = isam2->calculateEstimate();
+                        isam2.update(*graph, initial_values);
+                        result = isam2.calculateEstimate();
 
-                        P_X = isam2->marginalCovariance(X(correction_count));
-                        P_V = isam2->marginalCovariance(V(correction_count));
-                        P_B = isam2->marginalCovariance(B(correction_count));
+                        P_X = isam2.marginalCovariance(X(correction_count));
+                        P_V = isam2.marginalCovariance(V(correction_count));
+                        P_B = isam2.marginalCovariance(B(correction_count));
                         if (print_marginals)
                         {
                             std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
@@ -362,12 +344,12 @@ auto main(int argc, char *argv[]) -> int
                         smoother_timestamps_maps[V(correction_count)] = output_time;
                         smoother_timestamps_maps[B(correction_count)] = output_time;
 
-                        fixed_lag_smoother->update(*graph, initial_values, smoother_timestamps_maps);
-                        result = fixed_lag_smoother->calculateEstimate();
+                        fixed_lag_smoother.update(*graph, initial_values, smoother_timestamps_maps);
+                        result = fixed_lag_smoother.calculateEstimate();
 
-                        P_X = fixed_lag_smoother->marginalCovariance(X(correction_count));
-                        P_V = fixed_lag_smoother->marginalCovariance(V(correction_count));
-                        P_B = fixed_lag_smoother->marginalCovariance(B(correction_count));
+                        P_X = fixed_lag_smoother.marginalCovariance(X(correction_count));
+                        P_V = fixed_lag_smoother.marginalCovariance(V(correction_count));
+                        P_B = fixed_lag_smoother.marginalCovariance(B(correction_count));
                         if (print_marginals)
                         {
                             std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
@@ -480,14 +462,19 @@ auto main(int argc, char *argv[]) -> int
             // print_vector(true_position, "True position");
 
             cout << "(" << i << ")"
-                << " Position error [m]:" << current_position_error
-                << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1)
-                << " - Velocity error [m/s]:" << current_velocity_error << endl
-                << "(" << i << ")" << "      Bias values " << prev_bias << endl 
-                << "(" << i << ")" << " True bias values " << imu_bias_true << endl
-                << "(" << i << ")" << " Acc bias errors [m/s/s]: " << (imu_bias_true.accelerometer()-prev_bias.accelerometer()).transpose() << endl
-                << "(" << i << ")" << " Gyro bias errors [deg/s]: " << (imu_bias_true.gyroscope()-prev_bias.gyroscope() ).transpose()*rad2deg(1) << endl
-                ;       
+                 << " Position error [m]:" << current_position_error
+                 << " - Attitude error [deg]: " << current_orientation_error * rad2deg(1)
+                 << " - Velocity error [m/s]:" << current_velocity_error << endl
+                 << "(" << i << ")"
+                 << "      Bias values " << prev_bias << endl
+                 << "(" << i << ")"
+                 << " True bias values " << imu_bias_true << endl
+                 << "(" << i << ")"
+                 << " Acc bias errors [m/s/s]: "
+                 << (imu_bias_true.accelerometer() - prev_bias.accelerometer()).transpose() << endl
+                 << "(" << i << ")"
+                 << " Gyro bias errors [deg/s]: "
+                 << (imu_bias_true.gyroscope() - prev_bias.gyroscope()).transpose() * rad2deg(1) << endl;
         }
 
         cout << "Printing marginals" << endl;
