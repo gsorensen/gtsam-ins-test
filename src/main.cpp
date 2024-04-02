@@ -87,6 +87,52 @@ auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
     return params;
 }
 
+auto get_preintegrated_IMU_measurement_ptr(imuBias::ConstantBias prior_imu_bias, bool use_combined_measurement)
+    -> PreintegrationType *
+{
+    PreintegrationType *imu_preintegrated = nullptr;
+
+    /// NOTE: These mirror the noise sigma parameters in the MATLAB script
+    double accel_noise_sigma = 0.0012;
+    double gyro_noise_sigma = 4.3633e-5;
+    double accel_bias_rw_sigma = 5.2193e-4;
+    double gyro_bias_rw_sigma = 3.6697e-5;
+    Matrix33 measured_acc_cov = Matrix33::Identity(3, 3) * pow(accel_noise_sigma, 2);
+    Matrix33 measured_omega_cov = Matrix33::Identity(3, 3) * pow(gyro_noise_sigma, 2);
+    Matrix33 bias_acc_cov = Matrix33::Identity(3, 3) * pow(accel_bias_rw_sigma, 2);
+    Matrix33 bias_omega_cov = Matrix33::Identity(3, 3) * pow(gyro_bias_rw_sigma, 2);
+
+    /// TODO: What is this quantity related to in the "normal" INS case, is
+    /// this a seperate tuning parameter not present there?
+    Matrix33 integration_error_cov =
+        Matrix33::Identity(3, 3) * 1e-10; // error committed in integrating position from velocities
+    Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6);
+    bias_acc_omega_int.block<3, 3>(0, 0) = bias_acc_cov;
+    bias_acc_omega_int.block<3, 3>(3, 3) = bias_omega_cov;
+
+    boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p =
+        PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
+
+    p->accelerometerCovariance =
+        measured_acc_cov; ///< continuous-time "Covariance" describing accelerometer bias random walk
+    p->integrationCovariance = integration_error_cov; ///<- error committed in integrating position from velocities
+    p->gyroscopeCovariance = measured_omega_cov; ///< continuous-time "Covariance" describing gyroscope bias random walk
+    p->biasAccCovariance = bias_acc_cov;     ///< continuous-time "Covariance" describing accelerometer bias random walk
+    p->biasOmegaCovariance = bias_omega_cov; ///< continuous-time "Covariance" describing gyroscope bias random walk
+    p->biasAccOmegaInt = bias_acc_omega_int; ///< covariance of bias used as initial estimate.
+
+    if (use_combined_measurement)
+    {
+        imu_preintegrated = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
+    }
+    else
+    {
+        imu_preintegrated = new PreintegratedImuMeasurements(p, prior_imu_bias);
+    }
+
+    return imu_preintegrated;
+}
+
 auto main(int argc, char *argv[]) -> int
 {
     if (argc != 2)
@@ -99,7 +145,6 @@ auto main(int argc, char *argv[]) -> int
     /// exception if it receives an invalid argument.
     try
     {
-        PreintegrationType *imu_preintegrated_;
         SimulationData data = parse_data(argv[1]).value();
 
         // Set the prior based on data
@@ -151,39 +196,7 @@ auto main(int argc, char *argv[]) -> int
         graph->add(PriorFactor<Vector3>(V(correction_count), prior_velocity, velocity_noise_model));
         graph->add(PriorFactor<imuBias::ConstantBias>(B(correction_count), prior_imu_bias, bias_noise_model));
 
-        /// NOTE: These mirror the noise sigma parameters in the MATLAB script
-        double accel_noise_sigma = 0.0012;
-        double gyro_noise_sigma = 4.3633e-5;
-        double accel_bias_rw_sigma = 5.2193e-4;
-        double gyro_bias_rw_sigma = 3.6697e-5;
-        Matrix33 measured_acc_cov = Matrix33::Identity(3, 3) * pow(accel_noise_sigma, 2);
-        Matrix33 measured_omega_cov = Matrix33::Identity(3, 3) * pow(gyro_noise_sigma, 2);
-        Matrix33 bias_acc_cov = Matrix33::Identity(3, 3) * pow(accel_bias_rw_sigma, 2);
-        Matrix33 bias_omega_cov = Matrix33::Identity(3, 3) * pow(gyro_bias_rw_sigma, 2);
-
-        /// TODO: What is this quantity related to in the "normal" INS case, is
-        /// this a seperate tuning parameter not present there?
-        Matrix33 integration_error_cov =
-            Matrix33::Identity(3, 3) * 1e-10; // error committed in integrating position from velocities
-        Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6);
-        bias_acc_omega_int.block<3, 3>(0, 0) = bias_acc_cov;
-        bias_acc_omega_int.block<3, 3>(3, 3) = bias_omega_cov;
-
-        boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p =
-            PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
-
-        p->accelerometerCovariance =
-            measured_acc_cov; ///< continuous-time "Covariance" describing accelerometer bias random walk
-        p->integrationCovariance = integration_error_cov; ///<- error committed in integrating position from velocities
-        p->gyroscopeCovariance =
-            measured_omega_cov;              ///< continuous-time "Covariance" describing gyroscope bias random walk
-        p->biasAccCovariance = bias_acc_cov; ///< continuous-time "Covariance" describing accelerometer bias random walk
-        p->biasOmegaCovariance = bias_omega_cov; ///< continuous-time "Covariance" describing gyroscope bias random walk
-        p->biasAccOmegaInt = bias_acc_omega_int; ///< covariance of bias used as initial estimate.
-
-        // imu_preintegrated_ = new PreintegratedImuMeasurements(p, prior_imu_bias);
-        imu_preintegrated_ = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
-
+        PreintegrationType *imu_preintegrated_ = get_preintegrated_IMU_measurement_ptr(prior_imu_bias, true);
         NavState prev_state{prior_pose, prior_velocity};
         NavState prop_state = prev_state;
 
@@ -257,7 +270,8 @@ auto main(int argc, char *argv[]) -> int
             // rot_new = Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2],
             // data.q_nb.col(i)[3]);
 
-            Vector3 acc_new = rot_new * (data.f_meas.col(i) - prev_bias.accelerometer()) + p->getGravity();
+            Vector3 acc_new =
+                rot_new * (data.f_meas.col(i) - prev_bias.accelerometer()) + imu_preintegrated_->params()->getGravity();
             Vector3 vel_new = vel_prev + acc_new * dt;
             Vector3 pos_new = pos_prev + (vel_new + vel_prev) * dt / 2;
 
