@@ -480,9 +480,14 @@ auto main(int argc, char *argv[]) -> int
             // print_vector(true_position, "True position");
 
             cout << "(" << i << ")"
-                 << " Position error [m]:" << current_position_error
-                 << " - Attitude error [deg]: " << current_orientation_error * rad2deg(1)
-                 << " - Velocity error [m/s]:" << current_velocity_error << " - Bias values " << prev_bias << std::endl;
+                << " Position error [m]:" << current_position_error
+                << " - Attitude error [deg]: " << current_orientation_error*rad2deg(1)
+                << " - Velocity error [m/s]:" << current_velocity_error << endl
+                << "(" << i << ")" << "      Bias values " << prev_bias << endl 
+                << "(" << i << ")" << " True bias values " << imu_bias_true << endl
+                << "(" << i << ")" << " Acc bias errors [m/s/s]: " << (imu_bias_true.accelerometer()-prev_bias.accelerometer()).transpose() << endl
+                << "(" << i << ")" << " Gyro bias errors [deg/s]: " << (imu_bias_true.gyroscope()-prev_bias.gyroscope() ).transpose()*rad2deg(1) << endl
+                ;       
         }
 
         cout << "Printing marginals" << endl;
