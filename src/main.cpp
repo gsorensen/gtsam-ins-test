@@ -36,7 +36,7 @@ using symbol_shorthand::X; // pose (x, y, z, r, p, y)
 
 typedef Eigen::Matrix<double, 15, 15> Matrix15d;
 
-enum Opt
+enum class Optimiser
 {
     iSam2,
     fixLag,
@@ -168,7 +168,7 @@ double deg2rad(double deg)
 /* CONSTANTS*/
 
 // const Opt opt = iSam2;
-const Opt opt = fixLag;
+const Optimiser opt = Optimiser::fixLag;
 // const Opt opt = LM;
 
 const bool optimise = true;
@@ -217,7 +217,7 @@ int main(int argc, char *argv[])
         ISAM2Params isam2_params;
         switch (opt)
         {
-        case iSam2:
+        case Optimiser::iSam2:
             printf("Using ISAM2\n");
             isam2_params.relinearizeThreshold = 0.001;
             isam2_params.relinearizeSkip = 1;
@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
             especially when using Cholesky. */
             isam2 = new ISAM2(isam2_params);
             break;
-        case fixLag:
+        case Optimiser::fixLag:
             printf("Using ISAM2 Fixed lag smoother\n");
             isam2_params.relinearizeThreshold = 0.001;
             isam2_params.relinearizeSkip = 1;
@@ -253,7 +253,7 @@ int main(int argc, char *argv[])
             especially when using Cholesky. */
             fixed_lag_smoother = new IncrementalFixedLagSmoother(fixed_lag, isam2_params);
             break;
-        case LM:
+        case Optimiser::LM:
             printf("Using Levenberg Marquardt Optimizer\n");
             break;
         default:
@@ -454,7 +454,7 @@ int main(int argc, char *argv[])
                     auto start_optimisation = std::chrono::system_clock::now();
                     switch (opt)
                     {
-                    case iSam2: {
+                    case Optimiser::iSam2: {
                         isam2->update(*graph, initial_values);
                         result = isam2->calculateEstimate();
 
@@ -475,7 +475,7 @@ int main(int argc, char *argv[])
                         initial_values.clear();
                         break;
                     }
-                    case fixLag: {
+                    case Optimiser::fixLag: {
                         smoother_timestamps_maps[X(correction_count)] = output_time;
                         smoother_timestamps_maps[V(correction_count)] = output_time;
                         smoother_timestamps_maps[B(correction_count)] = output_time;
@@ -502,7 +502,7 @@ int main(int argc, char *argv[])
                         smoother_timestamps_maps.clear();
                         break;
                     }
-                    case LM: {
+                    case Optimiser::LM: {
                         LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
                         result = optimizer.optimize();
 
