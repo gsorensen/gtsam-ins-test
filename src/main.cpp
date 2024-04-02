@@ -144,27 +144,6 @@ double deg2rad(double deg)
     return deg / 180 * M_PI;
 }
 
-// std::string read_data_source_file_name()
-//{
-//     std::string data_file_name;
-//
-//     // Read from the text file
-//     std::ifstream MyReadFile("config.txt");
-//
-//     // Use a while loop together with the getline() function to read the file line by line
-//     std::cout << "Data file name: ";
-//     while (getline(MyReadFile, data_file_name))
-//     {
-//         // Output the text from the file
-//         std::cout << data_file_name;
-//     }
-//     std::cout << std::endl;
-//     // Close the file
-//     MyReadFile.close();
-//
-//     return data_file_name;
-// }
-
 /* CONSTANTS*/
 
 // const Opt opt = iSam2;
