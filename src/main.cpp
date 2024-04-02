@@ -185,19 +185,19 @@ auto main(int argc, char *argv[]) -> int
 
         /// TODO: What is this quantity related to in the "normal" INS case, is
         /// this a seperate tuning parameter not present there?
-        Matrix33 integration_error_cov =
-            Matrix33::Identity(3, 3) * 1e-8; // error committed in integrating position from velocities
-        Matrix66 bias_acc_omega_int = Matrix::Identity(6, 6) * 1e-5;
+        Matrix33 integration_error_cov      = Matrix33::Identity(3, 3) * 1e-10; // error committed in integrating position from velocities
+        Matrix66 bias_acc_omega_int         = Matrix::Identity(6, 6);
+        bias_acc_omega_int.block<3,3>(0,0)  = bias_acc_cov;
+        bias_acc_omega_int.block<3,3>(3,3)  = bias_omega_cov;
 
-        boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p =
-            PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
+        boost::shared_ptr<PreintegratedCombinedMeasurements::Params> p = PreintegratedCombinedMeasurements::Params::MakeSharedD(9.81);
 
-        p->accelerometerCovariance = measured_acc_cov;
-        p->integrationCovariance = integration_error_cov;
-        p->gyroscopeCovariance = measured_omega_cov;
-        p->biasAccCovariance = bias_acc_cov;
-        p->biasOmegaCovariance = bias_omega_cov;
-        p->biasAccOmegaInt = bias_acc_omega_int;
+        p->accelerometerCovariance  = measured_acc_cov;         ///< continuous-time "Covariance" describing accelerometer bias random walk
+        p->integrationCovariance    = integration_error_cov;    ///<- error committed in integrating position from velocities
+        p->gyroscopeCovariance      = measured_omega_cov;       ///< continuous-time "Covariance" describing gyroscope bias random walk
+        p->biasAccCovariance        = bias_acc_cov;             ///< continuous-time "Covariance" describing accelerometer bias random walk
+        p->biasOmegaCovariance      = bias_omega_cov;           ///< continuous-time "Covariance" describing gyroscope bias random walk
+        p->biasAccOmegaInt          = bias_acc_omega_int;       ///< covariance of bias used as initial estimate.
 
         // imu_preintegrated_ = new PreintegratedImuMeasurements(p, prior_imu_bias);
         imu_preintegrated_ = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
