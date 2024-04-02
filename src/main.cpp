@@ -1,8 +1,10 @@
-#include "gtsam/geometry/Quaternion.h"
-#include <Eigen/src/Core/Matrix.h>
+#include "SimulationData.hpp"
+#include "utils.hpp"
+
 #include <gtsam/base/Vector.h>
 #include <gtsam/geometry/Pose2.h>
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/Quaternion.h>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/linear/NoiseModel.h>
@@ -21,9 +23,9 @@
 
 #include <chrono>
 #include <cmath>
-#include <fstream>
 #include <stdexcept>
 #include <string>
+
 using namespace std::chrono;
 
 using namespace gtsam;
@@ -34,7 +36,7 @@ using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
 using symbol_shorthand::V; // velocity (xdot, ydot, zdot)
 using symbol_shorthand::X; // pose (x, y, z, r, p, y)
 
-typedef Eigen::Matrix<double, 15, 15> Matrix15d;
+using Matrix15d = Eigen::Matrix<double, 15, 15>;
 
 enum class Optimiser
 {
@@ -44,105 +46,6 @@ enum class Optimiser
 };
 
 PreintegrationType *imu_preintegrated_;
-
-// Define a struct to hold the submatrices
-// Estimated states share the coordinate frame with the true states
-struct Data
-{
-    Eigen::VectorXd types;
-    Eigen::MatrixXd p_nb_n;
-    Eigen::MatrixXd v_ib_i;
-    Eigen::MatrixXd q_nb;
-    Eigen::MatrixXd f_meas;
-    Eigen::MatrixXd w_meas;
-    Eigen::MatrixXd b_acc;
-    Eigen::MatrixXd b_ars;
-    Eigen::VectorXd t;
-    Eigen::MatrixXd z_GNSS;
-    Eigen::MatrixXd p_hat;
-    Eigen::MatrixXd v_hat;
-    Eigen::MatrixXd q_hat;
-    Eigen::MatrixXd b_acc_hat;
-    Eigen::MatrixXd b_ars_hat;
-};
-
-Eigen::MatrixXd read_CSV(const std::string &filename)
-{
-    std::ifstream data(filename);
-
-    if (!data)
-    {
-        std::cerr << "Error: Could not open file " << filename << "\n";
-        throw std::runtime_error("Could not open file\n");
-    }
-    std::string line;
-    std::vector<double> values;
-    int rows = 0;
-    while (std::getline(data, line))
-    {
-        std::stringstream lineStream(line);
-        std::string cell;
-        while (std::getline(lineStream, cell, ','))
-        {
-            values.push_back(std::stod(cell));
-        }
-        ++rows;
-    }
-    return Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
-        values.data(), rows, values.size() / rows);
-}
-
-void print_vector(const Eigen::VectorXd &v, const std::string &name)
-{
-    std::cout << name << " | X: " << v.x() << " Y: " << v.y() << " Z: " << v.z() << "\n";
-}
-
-Data extract_data(const Eigen::MatrixXd &m, const std::optional<std::uint64_t> &num_rows = std::nullopt)
-{
-    Data data;
-    std::uint64_t rows = num_rows.has_value() ? num_rows.value() : 100;
-    data.types = m.col(0).transpose();
-    data.p_nb_n = m.block(0, 1, rows, 3).transpose();
-    data.v_ib_i = m.block(0, 4, rows, 3).transpose();
-    data.q_nb = m.block(0, 7, rows, 4).transpose();
-    data.f_meas = m.block(0, 11, rows, 3).transpose();
-    data.w_meas = m.block(0, 14, rows, 3).transpose();
-    data.b_acc = m.block(0, 17, rows, 3).transpose();
-    data.b_ars = m.block(0, 20, rows, 3).transpose();
-    data.t = m.col(23).transpose();
-    data.z_GNSS = m.block(0, 24, rows, 3).transpose();
-
-    // NOTE: Temp check to use generated data before change, simply set the
-    // estimates to true states if the data file doesn't contain them
-    if (m.cols() == 43)
-    {
-        data.p_hat = m.block(0, 27, rows, 3).transpose();
-        data.v_hat = m.block(0, 30, rows, 3).transpose();
-        data.q_hat = m.block(0, 33, rows, 4).transpose();
-        data.b_acc_hat = m.block(0, 37, rows, 3).transpose();
-        data.b_ars_hat = m.block(0, 40, rows, 3).transpose();
-    }
-    else
-    {
-        data.p_hat = m.block(0, 1, rows, 3).transpose();
-        data.v_hat = m.block(0, 4, rows, 3).transpose();
-        data.q_hat = m.block(0, 7, rows, 4).transpose();
-        data.b_acc_hat = m.block(0, 17, rows, 3).transpose();
-        data.b_ars_hat = m.block(0, 20, rows, 3).transpose();
-    }
-
-    return data;
-}
-
-double rad2deg(double rad)
-{
-    return rad * 180 / M_PI;
-}
-
-double deg2rad(double deg)
-{
-    return deg / 180 * M_PI;
-}
 
 /* CONSTANTS*/
 
@@ -161,7 +64,7 @@ const double fixed_lag = 5.0; // fixed smoother lag
 /// TODO: FOllow this example using iSAM https://github.com/borglab/gtsam/blob/develop/examples/ImuFactorsExample2.cpp
 /// and look at speed
 
-int main(int argc, char *argv[])
+auto main(int argc, char *argv[]) -> int
 {
     if (argc != 2)
     {
@@ -173,10 +76,7 @@ int main(int argc, char *argv[])
     /// exception if it receives an invalid argument.
     try
     {
-        /// NOTE: This is where my data file is, extract_data shows format, path
-        /// needs to be updated
-        Eigen::MatrixXd m = read_CSV(argv[1]);
-        Data data = extract_data(m);
+        SimulationData data = parse_data(argv[1]).value();
 
         // Set the prior based on data
         Point3 prior_point{data.p_nb_n.col(0)};
@@ -613,6 +513,10 @@ int main(int argc, char *argv[])
         std::cout << e.what() << '\n';
     }
     catch (std::runtime_error &e)
+    {
+        std::cout << e.what() << '\n';
+    }
+    catch (std::bad_optional_access &e)
     {
         std::cout << e.what() << '\n';
     }
