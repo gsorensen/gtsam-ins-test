@@ -1,2 +1,3 @@
 ---
-Checks: '*,-llvm*'
+FormatStyle: file
+Checks: '*,-llvm*,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-fuchsia-*,-readability-identifier-length'

@@ -153,10 +153,12 @@ auto main(int argc, char *argv[]) -> int
             Rot3::Quaternion(data.q_nb.col(0)[0], data.q_nb.col(0)[1], data.q_nb.col(0)[2], data.q_nb.col(0)[3]);
         Pose3 prior_pose{prior_rotation, prior_point};
         Vector3 prior_velocity{data.v_ib_i.col(0)};
+        imuBias::ConstantBias prior_imu_bias;
+
+        // Constant state
         Vector3 acc_bias_true(-0.276839, -0.244186, 0.337360);
         Vector3 gyro_bias_true(-0.0028, 0.0021, -0.0032);
         imuBias::ConstantBias imu_bias_true(acc_bias_true, gyro_bias_true);
-        imuBias::ConstantBias prior_imu_bias;
 
         Values initial_values;
         Values result;
