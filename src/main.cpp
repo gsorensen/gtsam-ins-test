@@ -26,11 +26,10 @@
 #include <stdexcept>
 #include <string>
 
-using namespace std::chrono;
+#include <fmt/core.h>
 
+using namespace std::chrono;
 using namespace gtsam;
-using std::cout;
-using std::endl;
 
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
 using symbol_shorthand::V; // velocity (xdot, ydot, zdot)
@@ -64,21 +63,21 @@ auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
     switch (opt)
     {
     case Optimiser::iSam2:
-        printf("Using ISAM2\n");
+        fmt::print("Using ISAM2\n");
         params.relinearizeThreshold = 0.001;
         params.relinearizeSkip = 1;
         params.findUnusedFactorSlots = true;
         // params.setFactorization("QR");
         break;
     case Optimiser::fixLag:
-        printf("Using ISAM2 Fixed lag smoother\n");
+        fmt::print("Using ISAM2 Fixed lag smoother\n");
         params.relinearizeThreshold = 0.001;
         params.relinearizeSkip = 1;
         params.findUnusedFactorSlots = true;
         // params.setFactorization("QR");
         break;
     case Optimiser::LM:
-        printf("Using LM\n");
+        fmt::print("Using LM\n");
         break;
     default:
         break;
@@ -87,7 +86,7 @@ auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
     return params;
 }
 
-auto get_preintegrated_IMU_measurement_ptr(imuBias::ConstantBias prior_imu_bias, bool use_combined_measurement)
+auto get_preintegrated_IMU_measurement_ptr(const imuBias::ConstantBias &prior_imu_bias, bool use_combined_measurement)
     -> PreintegrationType *
 {
     PreintegrationType *imu_preintegrated = nullptr;
@@ -137,7 +136,7 @@ auto main(int argc, char *argv[]) -> int
 {
     if (argc != 2)
     {
-        std::cerr << "Usage: " << argv[0] << " <file_path>\n";
+        std::cerr << fmt::format("Usage: {} <file_path>\n", argv[0]);
         return 1;
     }
 
@@ -164,13 +163,13 @@ auto main(int argc, char *argv[]) -> int
         Values result;
         std::uint64_t correction_count = 0;
 
-        ISAM2Params isam2_params = get_ISAM2_params(opt);
-        ISAM2 isam2 = ISAM2(isam2_params);
-        IncrementalFixedLagSmoother fixed_lag_smoother = IncrementalFixedLagSmoother(fixed_lag, isam2_params);
-
         initial_values.insert(X(correction_count), prior_pose);
         initial_values.insert(V(correction_count), prior_velocity);
         initial_values.insert(B(correction_count), prior_imu_bias);
+
+        ISAM2Params isam2_params = get_ISAM2_params(opt);
+        ISAM2 isam2 = ISAM2(isam2_params);
+        IncrementalFixedLagSmoother fixed_lag_smoother = IncrementalFixedLagSmoother(fixed_lag, isam2_params);
 
         // FixedLagSmoother smoother;
         // smoother = new IncrementalFixedLagSmoother(lag, isam2_params);
@@ -180,15 +179,9 @@ auto main(int argc, char *argv[]) -> int
         smoother_timestamps_maps[B(correction_count)] = 0.0;
 
         // Assemble prior noise model and add it to the NonlinearFactorGraph
-        /// NOTE: Based on definition of pose, assumed that attitude
-        /// uncertainty comes before position uncertainity
         noiseModel::Diagonal::shared_ptr prior_noise_model = noiseModel::Diagonal::Sigmas(
             (Vector(6) << deg2rad(0.01), deg2rad(0.01), deg2rad(0.01), 0.1, 0.1, 0.1).finished());
-        // noiseModel::Diagonal::Sigmas((Vector(6) << 1.5, 1.5, 5, 0.5, 0.5, 0.5).finished());
-
         noiseModel::Diagonal::shared_ptr velocity_noise_model = noiseModel::Isotropic::Sigma(3, 0.01);
-
-        /// NOTE: Assumption is that acceleormeter noise is before gyroscope
         noiseModel::Diagonal::shared_ptr bias_noise_model = noiseModel::Diagonal::Sigmas(
             (Vector(6) << 0.5, 0.5, 0.5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1)).finished());
 
@@ -202,8 +195,6 @@ auto main(int argc, char *argv[]) -> int
         NavState prev_state{prior_pose, prior_velocity};
         NavState prop_state = prev_state;
 
-        /// NOTE: Bias in script modelled as Gauss-Markov, this is probably not
-        /// correct
         imuBias::ConstantBias prev_bias = prior_imu_bias;
 
         // Covariance matrices
@@ -215,12 +206,16 @@ auto main(int argc, char *argv[]) -> int
         P_X = marginals_init.marginalCovariance(X(correction_count));
         P_V = marginals_init.marginalCovariance(V(correction_count));
         P_B = marginals_init.marginalCovariance(B(correction_count));
-        cout << "Initial Pose Covariance:\n" << P_X << std::endl;
-        cout << "Initial Velocity Covariance:\n" << P_V << std::endl;
-        cout << "Initial Bias Covariance:\n" << P_B << std::endl;
+
+        fmt::print("Initial pose covariance\n");
+        std::cout << P_X << "\n";
+        fmt::print("Initial velocity covariance\n");
+        std::cout << P_V << "\n";
+        fmt::print("Initial bias covariance\n");
+        std::cout << P_B << "\n";
 
         static const size_t N = data.p_nb_n.cols();
-        cout << N << endl;
+        fmt::print("Number of samples: {}\n", N);
         Matrix15d P0 = Eigen::MatrixXd::Zero(15, 15);
         P0.block<6, 6>(0, 0) = P_X;
         P0.block<3, 3>(6, 6) = P_V;
@@ -239,13 +234,13 @@ auto main(int argc, char *argv[]) -> int
         for (int i = 1; i < N; i++)
         {
             output_time += dt;
-            std::cout << "(" << i << ") Starting iteration...\n";
+            fmt::print("({}) Starting iteration...\n", i);
 
-            std::cout << "(" << i << ") Integrating measurement...\n";
+            fmt::print("({}) Integrating measurement...\n", i);
             imu_preintegrated_->integrateMeasurement(data.f_meas.col(i), data.w_meas.col(i), dt);
             // imu_preintegrated_->print();
 
-            cout << "(" << i << ") Predicition...\n";
+            fmt::print("({}) Prediction...\n", i);
             // prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
             //  "Manual predicition"
             Vector3 pos_prev = prev_state.pose().translation();
@@ -293,12 +288,12 @@ auto main(int argc, char *argv[]) -> int
                     // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
                     //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
 
-                    std::cout << "(" << i << ") Creating combined IMU factor...\n";
+                    fmt::print("({}) Creating combined IMU factor...\n", i);
                     CombinedImuFactor imu_factor = {
                         X(correction_count - 1), V(correction_count - 1), X(correction_count), V(correction_count),
                         B(correction_count - 1), B(correction_count),     *preint_imu_combined};
 
-                    std::cout << "(" << i << ") Adding combined IMU factor to graph...\n";
+                    fmt::print("({}) Adding combined IMU factor to graph...\n", i);
                     graph->add(imu_factor);
                     // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
 
@@ -307,12 +302,12 @@ auto main(int argc, char *argv[]) -> int
                     // zero_bias,
                     //                                                bias_noise_model));
 
-                    std::cout << "(" << i << ") Insert prediction into values...\n";
+                    fmt::print("({}) Insert prediction into values...\n", i);
                     initial_values.insert(X(correction_count), prop_state.pose());
                     initial_values.insert(V(correction_count), prop_state.v());
                     initial_values.insert(B(correction_count), prev_bias);
 
-                    std::cout << "(" << i << ") Add GNSS factor for aiding measurement...\n";
+                    fmt::print("({}) Add GNSS factor for aiding measurement...\n", i);
                     noiseModel::Diagonal::shared_ptr correction_noise =
                         noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
 
@@ -330,7 +325,7 @@ auto main(int argc, char *argv[]) -> int
                     GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
                     graph->add(gps_factor);
 
-                    cout << "(" << i << ") Optimising...\n";
+                    fmt::print("({}) Optimising...\n", i);
                     auto start_optimisation = std::chrono::system_clock::now();
                     switch (opt)
                     {
@@ -343,12 +338,9 @@ auto main(int argc, char *argv[]) -> int
                         P_B = isam2.marginalCovariance(B(correction_count));
                         if (print_marginals)
                         {
-                            std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
-                            gtsam::print(P_X, print_string);
-                            print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
-                            gtsam::print(P_V, print_string);
-                            print_string = "(" + std::to_string(i) + ") Bias Covariance:";
-                            gtsam::print(P_B, print_string);
+                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
                         }
 
                         graph->resize(0);
@@ -368,12 +360,9 @@ auto main(int argc, char *argv[]) -> int
                         P_B = fixed_lag_smoother.marginalCovariance(B(correction_count));
                         if (print_marginals)
                         {
-                            std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
-                            gtsam::print(P_X, print_string);
-                            print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
-                            gtsam::print(P_V, print_string);
-                            print_string = "(" + std::to_string(i) + ") Bias Covariance:";
-                            gtsam::print(P_B, print_string);
+                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
                         }
 
                         // reset the graph
@@ -394,12 +383,9 @@ auto main(int argc, char *argv[]) -> int
                         if (print_marginals)
                         {
                             results->print();
-                            std::string print_string = "(" + std::to_string(i) + ") Pose Covariance:";
-                            gtsam::print(P_X, print_string);
-                            print_string = "(" + std::to_string(i) + ") Velocity Covariance:";
-                            gtsam::print(P_V, print_string);
-                            print_string = "(" + std::to_string(i) + ") Bias Covariance:";
-                            gtsam::print(P_B, print_string);
+                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
                         }
                         break;
                     }
@@ -411,7 +397,7 @@ auto main(int argc, char *argv[]) -> int
                     Pk.block<3, 3>(6, 6) = P_V;
                     Pk.block<6, 6>(9, 9) = P_B;
                     P.push_back(Pk);
-                    cout << "(" << i << ") Overriding preintegration and resettting prev_state...\n";
+                    fmt::print("({}) Overriding preintegration and resetting prev_state...\n", i);
                     // Override the beginning of the preintegration for the
 
                     // prev_state  = NavState(result.at<Pose3>(X(correction_count)),
@@ -433,8 +419,9 @@ auto main(int argc, char *argv[]) -> int
                     // imu_preintegrated_->print();
                     auto end_optimisation = std::chrono::system_clock::now();
                     std::chrono::duration<double> elapsed_opt = end_optimisation - start_optimisation;
-                    cout << "(" << i << ") Optimisation time elapsed: " << elapsed_opt.count() << "[s]\n";
+                    fmt::print("({}) Optmisation time elapsed: {} [s]\n", i, elapsed_opt.count());
                 }
+
                 else
                 {
                     Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
@@ -474,26 +461,19 @@ auto main(int argc, char *argv[]) -> int
             Vector3 velocity_error = gtsam_velocity - true_velocity;
             double current_velocity_error = velocity_error.norm();
 
-            // print_vector(gtsam_position, "Predicted position");
-            // print_vector(true_position, "True position");
+            fmt::print("({}) Pos err [m]: {} - Att err [deg]: {} - Vel err [m/s]: {}\n", i, current_position_error,
+                       current_orientation_error * rad2deg(1), current_velocity_error);
+            prev_bias.print(fmt::format("({})      Bias values: ", i));
+            imu_bias_true.print(fmt::format("({}) True bias values: ", i));
 
-            cout << "(" << i << ")"
-                 << " Position error [m]:" << current_position_error
-                 << " - Attitude error [deg]: " << current_orientation_error * rad2deg(1)
-                 << " - Velocity error [m/s]:" << current_velocity_error << endl
-                 << "(" << i << ")"
-                 << "      Bias values " << prev_bias << endl
-                 << "(" << i << ")"
-                 << " True bias values " << imu_bias_true << endl
-                 << "(" << i << ")"
-                 << " Acc bias errors [m/s/s]: "
-                 << (imu_bias_true.accelerometer() - prev_bias.accelerometer()).transpose() << endl
-                 << "(" << i << ")"
-                 << " Gyro bias errors [deg/s]: "
-                 << (imu_bias_true.gyroscope() - prev_bias.gyroscope()).transpose() * rad2deg(1) << endl;
+            Eigen::Vector3d acc_error = (imu_bias_true.accelerometer() - prev_bias.accelerometer()).transpose();
+            Eigen::Vector3d gyro_error = (imu_bias_true.gyroscope() - prev_bias.gyroscope()).transpose();
+            fmt::print("({}) Acc bias errors [m/s/s]: {} {} {}\n", i, acc_error.x(), acc_error.y(), acc_error.z());
+            fmt::print("({}) Gyro bias errors [deg/s]: {} {} {}\n", i, gyro_error.x() * rad2deg(1),
+                       gyro_error.y() * rad2deg(1), gyro_error.z() * rad2deg(1));
         }
 
-        cout << "Printing marginals" << endl;
+        fmt::print("Printing marginals\n");
         if (optimise)
         {
             imu_preintegrated_->print();
@@ -503,7 +483,7 @@ auto main(int argc, char *argv[]) -> int
             results->print();
 
             auto P_Xe = marginals.marginalCovariance(X(correction_count));
-            std::cout << "Pose Covariance:\n" << P_Xe << std::endl;
+            std::cou << "Pose Covariance:\n" << P_Xe << std::endl;
             auto P_V = marginals.marginalCovariance(V(correction_count));
             std::cout << "Velocity Covariance:\n" << P_V << std::endl;
             auto P_B = marginals.marginalCovariance(B(correction_count));
@@ -516,8 +496,8 @@ auto main(int argc, char *argv[]) -> int
         }
         auto end_filtering = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end_filtering - start_filtering;
-        std::cout << "Elapsed time: " << elapsed_seconds.count()
-                  << "[s] - Time horizon data: " << (data.p_nb_n.cols() + 1) * dt << "[s]\n";
+        fmt::print("Elapsed time: {} [s] - Time horizon data: {} [s]\n", elapsed_seconds.count(),
+                   (data.p_nb_n.cols() + 1) * dt);
     }
     catch (std::invalid_argument &e)
     {

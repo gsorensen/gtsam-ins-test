@@ -1,5 +1,6 @@
 [requires]
 gtsam/4.2
+fmt/10.2.1
 
 [generators]
 CMakeDeps
