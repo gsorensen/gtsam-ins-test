@@ -274,162 +274,149 @@ auto main(int argc, char *argv[]) -> int
 
             prop_state = NavState(rot_new, pos_new, vel_new);
 
-            if (optimise)
+            const bool is_update_step = (i + 1) % 10 == 0;
+            if (optimise && is_update_step)
             {
-                // applying corrections
-                if ((i + 1) % 10 == 0)
+                correction_count++;
+
+                // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
+                auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
+
+                // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+                //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
+
+                fmt::print("({}) Creating combined IMU factor...\n", i);
+                CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
+                                                V(correction_count),     B(correction_count - 1), B(correction_count),
+                                                *preint_imu_combined};
+
+                fmt::print("({}) Adding combined IMU factor to graph...\n", i);
+                graph->add(imu_factor);
+                // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
+
+                //// NOTE: This should NOT be added when using combined measurements
+                // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count),
+                // zero_bias,
+                //                                                bias_noise_model));
+
+                fmt::print("({}) Insert prediction into values...\n", i);
+                initial_values.insert(X(correction_count), prop_state.pose());
+                initial_values.insert(V(correction_count), prop_state.v());
+                initial_values.insert(B(correction_count), prev_bias);
+
+                fmt::print("({}) Add GNSS factor for aiding measurement...\n", i);
+                noiseModel::Diagonal::shared_ptr correction_noise =
+                    noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
+
+                /*
+                Eigen::VectorXd pos = data.p_nb_n.col(i);
+                Eigen::VectorXd meas = data.z_GNSS.col(i);
+                double pos_x = pos.x();
+                double pos_y = pos.y();
+                double pos_z = pos.z();
+                double meas_x = meas.x();
+                double meas_y = meas.y();
+                double meas_z = meas.z();
+                */
+                // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
+                GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
+                graph->add(gps_factor);
+
+                fmt::print("({}) Optimising...\n", i);
+                auto start_optimisation = std::chrono::system_clock::now();
+                switch (opt)
                 {
+                case Optimiser::iSam2: {
+                    isam2.update(*graph, initial_values);
+                    result = isam2.calculateEstimate();
 
-                    correction_count++;
-
-                    // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
-                    auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
-
-                    // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-                    //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
-
-                    fmt::print("({}) Creating combined IMU factor...\n", i);
-                    CombinedImuFactor imu_factor = {
-                        X(correction_count - 1), V(correction_count - 1), X(correction_count), V(correction_count),
-                        B(correction_count - 1), B(correction_count),     *preint_imu_combined};
-
-                    fmt::print("({}) Adding combined IMU factor to graph...\n", i);
-                    graph->add(imu_factor);
-                    // imuBias::ConstantBias zero_bias{Vector3{0.0, 0.0, 0.0}, Vector3{0.0, 0.0, 0.0}};
-
-                    //// NOTE: This should NOT be added when using combined measurements
-                    // graph->add(BetweenFactor<imuBias::ConstantBias>(B(correction_count - 1), B(correction_count),
-                    // zero_bias,
-                    //                                                bias_noise_model));
-
-                    fmt::print("({}) Insert prediction into values...\n", i);
-                    initial_values.insert(X(correction_count), prop_state.pose());
-                    initial_values.insert(V(correction_count), prop_state.v());
-                    initial_values.insert(B(correction_count), prev_bias);
-
-                    fmt::print("({}) Add GNSS factor for aiding measurement...\n", i);
-                    noiseModel::Diagonal::shared_ptr correction_noise =
-                        noiseModel::Diagonal::Sigmas((Vector(3) << 1.5, 1.5, 3).finished());
-
-                    /*
-                    Eigen::VectorXd pos = data.p_nb_n.col(i);
-                    Eigen::VectorXd meas = data.z_GNSS.col(i);
-                    double pos_x = pos.x();
-                    double pos_y = pos.y();
-                    double pos_z = pos.z();
-                    double meas_x = meas.x();
-                    double meas_y = meas.y();
-                    double meas_z = meas.z();
-                    */
-                    // GPSFactor gps_factor{X(correction_count), data.z_GNSS.col(i), correction_noise};
-                    GPSFactor gps_factor{X(correction_count), data.p_nb_n.col(i), correction_noise};
-                    graph->add(gps_factor);
-
-                    fmt::print("({}) Optimising...\n", i);
-                    auto start_optimisation = std::chrono::system_clock::now();
-                    switch (opt)
+                    P_X = isam2.marginalCovariance(X(correction_count));
+                    P_V = isam2.marginalCovariance(V(correction_count));
+                    P_B = isam2.marginalCovariance(B(correction_count));
+                    if (print_marginals)
                     {
-                    case Optimiser::iSam2: {
-                        isam2.update(*graph, initial_values);
-                        result = isam2.calculateEstimate();
-
-                        P_X = isam2.marginalCovariance(X(correction_count));
-                        P_V = isam2.marginalCovariance(V(correction_count));
-                        P_B = isam2.marginalCovariance(B(correction_count));
-                        if (print_marginals)
-                        {
-                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
-                        }
-
-                        graph->resize(0);
-                        initial_values.clear();
-                        break;
+                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
                     }
-                    case Optimiser::fixLag: {
-                        smoother_timestamps_maps[X(correction_count)] = output_time;
-                        smoother_timestamps_maps[V(correction_count)] = output_time;
-                        smoother_timestamps_maps[B(correction_count)] = output_time;
 
-                        fixed_lag_smoother.update(*graph, initial_values, smoother_timestamps_maps);
-                        result = fixed_lag_smoother.calculateEstimate();
-
-                        P_X = fixed_lag_smoother.marginalCovariance(X(correction_count));
-                        P_V = fixed_lag_smoother.marginalCovariance(V(correction_count));
-                        P_B = fixed_lag_smoother.marginalCovariance(B(correction_count));
-                        if (print_marginals)
-                        {
-                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
-                        }
-
-                        // reset the graph
-                        graph->resize(0);
-                        initial_values.clear();
-                        smoother_timestamps_maps.clear();
-                        break;
-                    }
-                    case Optimiser::LM: {
-                        LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
-                        result = optimizer.optimize();
-
-                        Marginals marginals{*graph, result};
-                        GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
-                        P_X = marginals.marginalCovariance(X(correction_count));
-                        P_V = marginals.marginalCovariance(V(correction_count));
-                        P_B = marginals.marginalCovariance(B(correction_count));
-                        if (print_marginals)
-                        {
-                            results->print();
-                            gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                            gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                            gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
-                        }
-                        break;
-                    }
-                    default:
-                        return -1;
-                    }
-                    Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
-                    Pk.block<6, 6>(0, 0) = P_X;
-                    Pk.block<3, 3>(6, 6) = P_V;
-                    Pk.block<6, 6>(9, 9) = P_B;
-                    P.push_back(Pk);
-                    fmt::print("({}) Overriding preintegration and resetting prev_state...\n", i);
-                    // Override the beginning of the preintegration for the
-
-                    // prev_state  = NavState(result.at<Pose3>(X(correction_count)),
-                    // result.at<Vector3>(V(correction_count)));
-                    Pose3 pose_corrected = result.at<Pose3>(X(correction_count));
-                    Rot3 rot_corrected = pose_corrected.rotation().normalized();
-                    Point3 pos_corrected = pose_corrected.translation();
-                    Vector3 vel_corrected = result.at<Vector3>(V(correction_count));
-                    prev_state = NavState(rot_corrected, pos_corrected, vel_corrected);
-                    prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
-
-                    // cout << "(" << i << ") Preintegration before reset \n";
-                    // imu_preintegrated_->print();
-
-                    // Reset the preintegration object
-                    imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
-
-                    // cout << "(" << i << ") Preintegration after reset \n";
-                    // imu_preintegrated_->print();
-                    auto end_optimisation = std::chrono::system_clock::now();
-                    std::chrono::duration<double> elapsed_opt = end_optimisation - start_optimisation;
-                    fmt::print("({}) Optmisation time elapsed: {} [s]\n", i, elapsed_opt.count());
+                    graph->resize(0);
+                    initial_values.clear();
+                    break;
                 }
+                case Optimiser::fixLag: {
+                    smoother_timestamps_maps[X(correction_count)] = output_time;
+                    smoother_timestamps_maps[V(correction_count)] = output_time;
+                    smoother_timestamps_maps[B(correction_count)] = output_time;
 
-                else
-                {
-                    Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
-                    // Pk = imu_preintegrated_->preintMeasCov(); // does not compile.
-                    //  no member named 'preintMeasCov' in 'gtsam::ManifoldPreintegration'
-                    P.push_back(Pk);
-                    prev_state = prop_state;
+                    fixed_lag_smoother.update(*graph, initial_values, smoother_timestamps_maps);
+                    result = fixed_lag_smoother.calculateEstimate();
+
+                    P_X = fixed_lag_smoother.marginalCovariance(X(correction_count));
+                    P_V = fixed_lag_smoother.marginalCovariance(V(correction_count));
+                    P_B = fixed_lag_smoother.marginalCovariance(B(correction_count));
+                    if (print_marginals)
+                    {
+                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
+                    }
+
+                    // reset the graph
+                    graph->resize(0);
+                    initial_values.clear();
+                    smoother_timestamps_maps.clear();
+                    break;
                 }
+                case Optimiser::LM: {
+                    LevenbergMarquardtOptimizer optimizer(*graph, initial_values);
+                    result = optimizer.optimize();
+
+                    Marginals marginals{*graph, result};
+                    GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
+                    P_X = marginals.marginalCovariance(X(correction_count));
+                    P_V = marginals.marginalCovariance(V(correction_count));
+                    P_B = marginals.marginalCovariance(B(correction_count));
+                    if (print_marginals)
+                    {
+                        results->print();
+                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
+                    }
+                    break;
+                }
+                default:
+                    return -1;
+                }
+                Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
+                Pk.block<6, 6>(0, 0) = P_X;
+                Pk.block<3, 3>(6, 6) = P_V;
+                Pk.block<6, 6>(9, 9) = P_B;
+                P.push_back(Pk);
+                fmt::print("({}) Overriding preintegration and resetting prev_state...\n", i);
+                // Override the beginning of the preintegration for the
+
+                // prev_state  = NavState(result.at<Pose3>(X(correction_count)),
+                // result.at<Vector3>(V(correction_count)));
+                Pose3 pose_corrected = result.at<Pose3>(X(correction_count));
+                Rot3 rot_corrected = pose_corrected.rotation().normalized();
+                Point3 pos_corrected = pose_corrected.translation();
+                Vector3 vel_corrected = result.at<Vector3>(V(correction_count));
+                prev_state = NavState(rot_corrected, pos_corrected, vel_corrected);
+                prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+
+                // cout << "(" << i << ") Preintegration before reset \n";
+                // imu_preintegrated_->print();
+
+                // Reset the preintegration object
+                imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
+
+                // cout << "(" << i << ") Preintegration after reset \n";
+                // imu_preintegrated_->print();
+                auto end_optimisation = std::chrono::system_clock::now();
+                std::chrono::duration<double> elapsed_opt = end_optimisation - start_optimisation;
+                fmt::print("({}) Optmisation time elapsed: {} [s]\n", i, elapsed_opt.count());
             }
             else
             {
@@ -476,7 +463,6 @@ auto main(int argc, char *argv[]) -> int
         fmt::print("Printing marginals\n");
         if (optimise)
         {
-            imu_preintegrated_->print();
             /*
             Marginals marginals{*graph, result};
             GaussianFactor::shared_ptr results = marginals.marginalFactor(X(correction_count));
@@ -490,10 +476,8 @@ auto main(int argc, char *argv[]) -> int
             std::cout << "Bias Covariance:\n" << P_B << std::endl;
             */
         }
-        else
-        {
-            imu_preintegrated_->print();
-        }
+        imu_preintegrated_->print();
+
         auto end_filtering = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end_filtering - start_filtering;
         fmt::print("Elapsed time: {} [s] - Time horizon data: {} [s]\n", elapsed_seconds.count(),
