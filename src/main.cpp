@@ -13,6 +13,7 @@
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/ImuFactor.h>
 #include <gtsam/navigation/NavState.h>
+#include <gtsam/navigation/PreintegrationParams.h>
 #include <gtsam/nonlinear/ISAM2.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
@@ -27,8 +28,8 @@
 #include <string>
 
 #include <fmt/core.h>
+#include <variant>
 
-using namespace std::chrono;
 using namespace gtsam;
 
 using symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
@@ -36,6 +37,8 @@ using symbol_shorthand::V; // velocity (xdot, ydot, zdot)
 using symbol_shorthand::X; // pose (x, y, z, r, p, y)
 
 using Matrix15d = Eigen::Matrix<double, 15, 15>;
+
+using PreintegratedMeasurement = std::variant<PreintegratedImuMeasurements, PreintegratedCombinedMeasurements>;
 
 enum class Optimiser
 {
@@ -57,6 +60,28 @@ const bool print_marginals = false;
 
 const double fixed_lag = 5.0; // fixed smoother lag
 
+void integrate_measurement(PreintegratedMeasurement &measurement, const Eigen::Vector3d &f, const Eigen::Vector3d &w,
+                           double dt)
+{
+    std::visit([f, w, dt](auto &&x) { x.integrateMeasurement(f, w, dt); }, measurement);
+}
+
+auto get_preintegrated_params(const PreintegratedMeasurement &measurement)
+    -> boost::shared_ptr<gtsam::PreintegrationParams>
+{
+    return std::visit([](auto &&x) -> boost::shared_ptr<gtsam::PreintegrationParams> { return x.params(); },
+                      measurement);
+}
+
+void reset_preintegration_bias(PreintegratedMeasurement &measurement, const imuBias::ConstantBias &prev_bias)
+{
+    std::visit([prev_bias](auto &&x) { x.resetIntegrationAndSetBias(prev_bias); }, measurement);
+}
+
+void print_preintegration(const PreintegratedMeasurement &measurement)
+{
+    std::visit([](auto &&x) { x.print(); }, measurement);
+}
 auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
 {
     ISAM2Params params;
@@ -87,10 +112,8 @@ auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
 }
 
 auto get_preintegrated_IMU_measurement_ptr(const imuBias::ConstantBias &prior_imu_bias, bool use_combined_measurement)
-    -> PreintegrationType *
+    -> PreintegratedMeasurement
 {
-    PreintegrationType *imu_preintegrated = nullptr;
-
     /// NOTE: These mirror the noise sigma parameters in the MATLAB script
     double accel_noise_sigma = 0.0012;
     double gyro_noise_sigma = 4.3633e-5;
@@ -120,16 +143,17 @@ auto get_preintegrated_IMU_measurement_ptr(const imuBias::ConstantBias &prior_im
     p->biasOmegaCovariance = bias_omega_cov; ///< continuous-time "Covariance" describing gyroscope bias random walk
     p->biasAccOmegaInt = bias_acc_omega_int; ///< covariance of bias used as initial estimate.
 
+    PreintegratedMeasurement measurement;
     if (use_combined_measurement)
     {
-        imu_preintegrated = new PreintegratedCombinedMeasurements(p, prior_imu_bias);
+        measurement = PreintegratedCombinedMeasurements(p, prior_imu_bias);
     }
     else
     {
-        imu_preintegrated = new PreintegratedImuMeasurements(p, prior_imu_bias);
+        measurement = PreintegratedImuMeasurements(p, prior_imu_bias);
     }
 
-    return imu_preintegrated;
+    return measurement;
 }
 
 auto main(int argc, char *argv[]) -> int
@@ -191,7 +215,7 @@ auto main(int argc, char *argv[]) -> int
         graph->add(PriorFactor<Vector3>(V(correction_count), prior_velocity, velocity_noise_model));
         graph->add(PriorFactor<imuBias::ConstantBias>(B(correction_count), prior_imu_bias, bias_noise_model));
 
-        PreintegrationType *imu_preintegrated_ = get_preintegrated_IMU_measurement_ptr(prior_imu_bias, true);
+        PreintegratedMeasurement imu_preintegrated_ = get_preintegrated_IMU_measurement_ptr(prior_imu_bias, true);
         NavState prev_state{prior_pose, prior_velocity};
         NavState prop_state = prev_state;
 
@@ -237,8 +261,8 @@ auto main(int argc, char *argv[]) -> int
             fmt::print("({}) Starting iteration...\n", i);
 
             fmt::print("({}) Integrating measurement...\n", i);
-            imu_preintegrated_->integrateMeasurement(data.f_meas.col(i), data.w_meas.col(i), dt);
-            // imu_preintegrated_->print();
+
+            integrate_measurement(imu_preintegrated_, data.f_meas.col(i), data.w_meas.col(i), dt);
 
             fmt::print("({}) Prediction...\n", i);
             // prop_state = imu_preintegrated_->predict(prev_state, prev_bias);
@@ -267,8 +291,8 @@ auto main(int argc, char *argv[]) -> int
             // rot_new = Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2],
             // data.q_nb.col(i)[3]);
 
-            Vector3 acc_new =
-                rot_new * (data.f_meas.col(i) - prev_bias.accelerometer()) + imu_preintegrated_->params()->getGravity();
+            Vector3 acc_new = rot_new * (data.f_meas.col(i) - prev_bias.accelerometer()) +
+                              get_preintegrated_params(imu_preintegrated_)->getGravity();
             Vector3 vel_new = vel_prev + acc_new * dt;
             Vector3 pos_new = pos_prev + (vel_new + vel_prev) * dt / 2;
 
@@ -280,15 +304,20 @@ auto main(int argc, char *argv[]) -> int
                 correction_count++;
 
                 // auto *preint_imu_combined = dynamic_cast<PreintegratedImuMeasurements *>(imu_preintegrated_);
-                auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements *>(imu_preintegrated_);
+                //                auto *preint_imu_combined = dynamic_cast<PreintegratedCombinedMeasurements
+                //                *>(imu_preintegrated_);
 
                 // ImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
                 //                         V(correction_count),     B(correction_count - 1), *preint_imu_combined};
 
                 fmt::print("({}) Creating combined IMU factor...\n", i);
-                CombinedImuFactor imu_factor = {X(correction_count - 1), V(correction_count - 1), X(correction_count),
-                                                V(correction_count),     B(correction_count - 1), B(correction_count),
-                                                *preint_imu_combined};
+                CombinedImuFactor imu_factor = {X(correction_count - 1),
+                                                V(correction_count - 1),
+                                                X(correction_count),
+                                                V(correction_count),
+                                                B(correction_count - 1),
+                                                B(correction_count),
+                                                std::get<PreintegratedCombinedMeasurements>(imu_preintegrated_)};
 
                 fmt::print("({}) Adding combined IMU factor to graph...\n", i);
                 graph->add(imu_factor);
@@ -410,7 +439,7 @@ auto main(int argc, char *argv[]) -> int
                 // imu_preintegrated_->print();
 
                 // Reset the preintegration object
-                imu_preintegrated_->resetIntegrationAndSetBias(prev_bias);
+                reset_preintegration_bias(imu_preintegrated_, prev_bias);
 
                 // cout << "(" << i << ") Preintegration after reset \n";
                 // imu_preintegrated_->print();
@@ -476,7 +505,7 @@ auto main(int argc, char *argv[]) -> int
             std::cout << "Bias Covariance:\n" << P_B << std::endl;
             */
         }
-        imu_preintegrated_->print();
+        print_preintegration(imu_preintegrated_);
 
         auto end_filtering = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = end_filtering - start_filtering;
