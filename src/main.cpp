@@ -72,6 +72,10 @@ auto get_preintegrated_params(const PreintegratedMeasurement &measurement)
     return std::visit([](auto &&x) -> boost::shared_ptr<gtsam::PreintegrationParams> { return x.params(); },
                       measurement);
 }
+auto get_preintegrated_meas_cov(const PreintegratedMeasurement &measurement) -> Eigen::MatrixXd
+{
+    return std::visit([](auto &&x) -> Eigen::MatrixXd { return x.preintMeasCov(); }, measurement);
+}
 
 void reset_preintegration_bias(PreintegratedMeasurement &measurement, const imuBias::ConstantBias &prev_bias)
 {
@@ -253,6 +257,10 @@ auto main(int argc, char *argv[]) -> int
 
         double output_time = 0.0;
         double dt = 0.01;
+
+        Eigen::MatrixXd meas_cov = get_preintegrated_meas_cov(imu_preintegrated_);
+        std::cout << "Meas cov\n";
+        std::cout << meas_cov << "\n";
 
         auto start_filtering = std::chrono::system_clock::now();
         for (int i = 1; i < N; i++)
