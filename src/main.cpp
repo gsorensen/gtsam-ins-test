@@ -86,6 +86,7 @@ void print_preintegration(const PreintegratedMeasurement &measurement)
 {
     std::visit([](auto &&x) { x.print(); }, measurement);
 }
+
 auto get_ISAM2_params(const Optimiser &opt) -> ISAM2Params
 {
     ISAM2Params params;
@@ -529,6 +530,10 @@ auto main(int argc, char *argv[]) -> int
         std::cout << e.what() << '\n';
     }
     catch (std::bad_optional_access &e)
+    {
+        std::cout << e.what() << '\n';
+    }
+    catch (std::bad_variant_access &e)
     {
         std::cout << e.what() << '\n';
     }
