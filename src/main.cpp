@@ -251,6 +251,9 @@ auto main(int argc, char *argv[]) -> int
         P0.block<6, 6>(9, 9) = P_B;
         std::list<Matrix15d> P = {};
         P.push_back(P0);
+        Matrix15d P_k       = Eigen::MatrixXd::Zero(15, 15);
+        Matrix15d P_corr    = Eigen::MatrixXd::Zero(15, 15);
+
 
         // Keep track of the total error over the entire run for a simple performance metric.
         double current_position_error = 0.0;
@@ -427,11 +430,12 @@ auto main(int argc, char *argv[]) -> int
                 default:
                     return -1;
                 }
-                Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
-                Pk.block<6, 6>(0, 0) = P_X;
-                Pk.block<3, 3>(6, 6) = P_V;
-                Pk.block<6, 6>(9, 9) = P_B;
-                P.push_back(Pk);
+                P_k                     = Eigen::MatrixXd::Zero(15, 15);
+                P_k.block<6, 6>(0, 0)   = P_X;
+                P_k.block<3, 3>(6, 6)   = P_V;
+                P_k.block<6, 6>(9, 9)   = P_B;
+                P_corr                  = P_k;
+                P.push_back(P_k);
                 fmt::print("({}) Overriding preintegration and resetting prev_state...\n", i);
                 // Override the beginning of the preintegration for the
 
@@ -458,10 +462,9 @@ auto main(int argc, char *argv[]) -> int
             }
             else
             {
-                Matrix15d Pk = Eigen::MatrixXd::Zero(15, 15);
-                // Pk = imu_preintegrated_->preintMeasCov(); // does not compile.
+                P_k = P_corr + get_preintegrated_meas_cov( imu_preintegrated_);
                 //  no member named 'preintMeasCov' in 'gtsam::ManifoldPreintegration'
-                P.push_back(Pk);
+                P.push_back(P_k);
                 prev_state = prop_state;
             }
 
