@@ -376,9 +376,9 @@ auto main(int argc, char *argv[]) -> int
                     P_B = isam2.marginalCovariance(B(correction_count));
                     if (print_marginals)
                     {
-                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
+                        gtsam::print(P_X, fmt::format("({}) Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("({}) Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("({}) Bias Covariance:", i));
                     }
 
                     graph->resize(0);
@@ -398,9 +398,9 @@ auto main(int argc, char *argv[]) -> int
                     P_B = fixed_lag_smoother.marginalCovariance(B(correction_count));
                     if (print_marginals)
                     {
-                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
+                        gtsam::print(P_X, fmt::format("({}) Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("({}) Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("({}) Bias Covariance:", i));
                     }
 
                     // reset the graph
@@ -421,9 +421,9 @@ auto main(int argc, char *argv[]) -> int
                     if (print_marginals)
                     {
                         results->print();
-                        gtsam::print(P_X, fmt::format("{} Pose Covariance:", i));
-                        gtsam::print(P_V, fmt::format("{} Velocity Covariance:", i));
-                        gtsam::print(P_B, fmt::format("{} Bias Covariance:", i));
+                        gtsam::print(P_X, fmt::format("({}) Pose Covariance:", i));
+                        gtsam::print(P_V, fmt::format("({}) Velocity Covariance:", i));
+                        gtsam::print(P_B, fmt::format("({}) Bias Covariance:", i));
                     }
                     break;
                 }
