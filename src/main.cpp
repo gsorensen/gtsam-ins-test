@@ -441,12 +441,12 @@ auto main(int argc, char *argv[]) -> int
 
                 // prev_state  = NavState(result.at<Pose3>(X(correction_count)),
                 // result.at<Vector3>(V(correction_count)));
-                Pose3 pose_corrected = result.at<Pose3>(X(correction_count));
-                Rot3 rot_corrected = pose_corrected.rotation().normalized();
-                Point3 pos_corrected = pose_corrected.translation();
-                Vector3 vel_corrected = result.at<Vector3>(V(correction_count));
-                prev_state = NavState(rot_corrected, pos_corrected, vel_corrected);
-                prev_bias = result.at<imuBias::ConstantBias>(B(correction_count));
+                Pose3 pose_corrected    = result.at<Pose3>(X(correction_count));
+                Rot3 rot_corrected      = pose_corrected.rotation().normalized();
+                Point3 pos_corrected    = pose_corrected.translation();
+                Vector3 vel_corrected   = result.at<Vector3>(V(correction_count));
+                prev_state              = NavState(rot_corrected, pos_corrected, vel_corrected);
+                prev_bias               = result.at<imuBias::ConstantBias>(B(correction_count));
 
                 // cout << "(" << i << ") Preintegration before reset \n";
                 // imu_preintegrated_->print();
@@ -469,33 +469,33 @@ auto main(int argc, char *argv[]) -> int
             }
 
             // Print out the position, orientation and velocity error for comparison + bias values
-            Vector3 gtsam_position = prev_state.pose().translation();
-            Vector3 true_position = data.p_nb_n.col(i);
-            Vector3 position_error = gtsam_position - true_position;
-            current_position_error = position_error.norm();
+            Vector3 gtsam_position  = prev_state.pose().translation();
+            Vector3 true_position   = data.p_nb_n.col(i);
+            Vector3 position_error  = gtsam_position - true_position;
+            current_position_error  = position_error.norm();
 
-            Quaternion gtsam_quat = prev_state.pose().rotation().toQuaternion();
-            Quaternion true_quat =
+            Quaternion gtsam_quat   = prev_state.pose().rotation().toQuaternion();
+            Quaternion true_quat    =
                 Rot3::Quaternion(data.q_nb.col(i)[0], data.q_nb.col(i)[1], data.q_nb.col(i)[2], data.q_nb.col(i)[3])
                     .toQuaternion();
             // Quaternion quat_error           = gtsam_quat * true_quat.inverse();
-            Quaternion quat_error = gtsam_quat.inverse() * true_quat;
+            Quaternion quat_error   = gtsam_quat.inverse() * true_quat;
             quat_error.normalize();
             Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
-            current_orientation_error = euler_angle_error.norm();
+            current_orientation_error       = euler_angle_error.norm();
 
-            Vector3 true_velocity = data.v_ib_i.col(i);
-            Vector3 gtsam_velocity = prev_state.velocity();
-            Vector3 velocity_error = gtsam_velocity - true_velocity;
-            double current_velocity_error = velocity_error.norm();
+            Vector3 true_velocity           = data.v_ib_i.col(i);
+            Vector3 gtsam_velocity          = prev_state.velocity();
+            Vector3 velocity_error          = gtsam_velocity - true_velocity;
+            double current_velocity_error   = velocity_error.norm();
 
             fmt::print("({}) Pos err [m]: {} - Att err [deg]: {} - Vel err [m/s]: {}\n", i, current_position_error,
                        current_orientation_error * rad2deg(1), current_velocity_error);
             prev_bias.print(fmt::format("({})      Bias values: ", i));
             imu_bias_true.print(fmt::format("({}) True bias values: ", i));
 
-            Eigen::Vector3d acc_error = (imu_bias_true.accelerometer() - prev_bias.accelerometer()).transpose();
-            Eigen::Vector3d gyro_error = (imu_bias_true.gyroscope() - prev_bias.gyroscope()).transpose();
+            Eigen::Vector3d acc_error       = (imu_bias_true.accelerometer() - prev_bias.accelerometer()).transpose();
+            Eigen::Vector3d gyro_error      = (imu_bias_true.gyroscope() - prev_bias.gyroscope()).transpose();
             fmt::print("({}) Acc bias errors [m/s/s]: {} {} {}\n", i, acc_error.x(), acc_error.y(), acc_error.z());
             fmt::print("({}) Gyro bias errors [deg/s]: {} {} {}\n", i, gyro_error.x() * rad2deg(1),
                        gyro_error.y() * rad2deg(1), gyro_error.z() * rad2deg(1));
