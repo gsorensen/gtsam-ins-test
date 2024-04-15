@@ -19,6 +19,9 @@ struct SimulationData
     Eigen::MatrixXd q_hat;
     Eigen::MatrixXd b_acc_hat;
     Eigen::MatrixXd b_ars_hat;
+    // NOTE: This is a bit wasteful, but the data is there every time step
+    Eigen::VectorXd num_locators;
+    Eigen::MatrixXd z_PARS;
 };
 
 // Helper function. Takes an absolute path to a CSV file of the correect format, and returns an

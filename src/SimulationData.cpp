@@ -13,7 +13,7 @@
     const Eigen::MatrixXd &data_matrix = data_matrix_result.value();
 
     SimulationData data;
-    std::uint64_t rows = num_rows.has_value() ? num_rows.value() : 100;
+    std::uint64_t rows = num_rows.has_value() ? num_rows.value() : data_matrix.rows();
     data.types = data_matrix.col(0).transpose();
     data.p_nb_n = data_matrix.block(0, 1, rows, 3).transpose();
     data.v_ib_i = data_matrix.block(0, 4, rows, 3).transpose();
@@ -25,9 +25,15 @@
     data.t = data_matrix.col(23).transpose();
     data.z_GNSS = data_matrix.block(0, 24, rows, 3).transpose();
 
+    if (data_matrix.cols() > 43)
+    {
+        data.num_locators = data_matrix.col(43).transpose();
+        int measurement_size = data.num_locators[0];
+        data.z_PARS = data_matrix.block(0, 44, rows, measurement_size);
+    }
     // NOTE: Temp check to use generated data before change, simply set the
     // estimates to true states if the data file doesn't contain them
-    if (data_matrix.cols() == 43)
+    if (data_matrix.cols() >= 43)
     {
         data.p_hat = data_matrix.block(0, 27, rows, 3).transpose();
         data.v_hat = data_matrix.block(0, 30, rows, 3).transpose();
