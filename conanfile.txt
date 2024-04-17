@@ -1,4 +1,5 @@
 [requires]
+eigen/3.4.0
 gtsam/4.2
 fmt/10.2.1
 

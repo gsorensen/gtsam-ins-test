@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Eigen/Core>
 #include <cstdint>
 #include <optional>
@@ -22,7 +24,7 @@ struct SimulationData
     // NOTE: This is a bit wasteful, but the data is there every time step
     Eigen::VectorXd num_locators;
     Eigen::MatrixXd z_PARS;
-};
+} __attribute__((aligned(128)));
 
 // Helper function. Takes an absolute path to a CSV file of the correect format, and returns an
 // Eigen Matrix containing the parsed data if the file is found
