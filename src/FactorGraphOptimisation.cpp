@@ -495,6 +495,7 @@ auto FactorGraphOptimisation::export_data_to_csv(const std::string &filename) co
         Eigen::Vector3d att_err = m_orientation_error[i];
         Eigen::Vector3d acc_err = m_acc_bias_error[i];
         Eigen::Vector3d gyro_err = m_gyro_bias_error[i];
+        /// NOTE: Consider how to save cross covariance if/when necessary
         output_file << fmt::format("{},", t);
         output_file << fmt::format("{},{},{},{},{},{},", att_err.x(), att_err.y(), att_err.z(), P(0, 0), P(1, 1),
                                    P(2, 2));
