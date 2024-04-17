@@ -10,7 +10,7 @@ auto initialise_prior_noise_models()
 {
     // Assemble prior noise model
     gtsam::noiseModel::Diagonal::shared_ptr prior_pose_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
-        (gtsam::Vector(6) << deg2rad(0.01), deg2rad(0.01), deg2rad(0.01), 0.1, 0.1, 0.1).finished());
+        (gtsam::Vector(6) << deg2rad(0.01), deg2rad(0.01), deg2rad(0.01), 1.5, 1.5, 5).finished());
     gtsam::noiseModel::Diagonal::shared_ptr prior_velocity_noise_model = gtsam::noiseModel::Isotropic::Sigma(3, 0.01);
     gtsam::noiseModel::Diagonal::shared_ptr prior_bias_noise_model = gtsam::noiseModel::Diagonal::Sigmas(
         (gtsam::Vector(6) << 0.5, 0.5, 0.5, deg2rad(0.1), deg2rad(0.1), deg2rad(0.1)).finished());
