@@ -81,7 +81,7 @@ auto main(int argc, char *argv[]) -> int
                 fgo.propagate_state_without_optimising(idx);
             }
 
-            fgo.print_errors(idx);
+            fgo.compute_and_print_errors(idx);
         }
 
         fgo.print_current_preintegration_measurement(N - 1);

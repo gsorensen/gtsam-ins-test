@@ -43,26 +43,16 @@ class FactorGraphOptimisation
   public:
     explicit FactorGraphOptimisation(const SimulationData &data, const Optimiser &optimisation_scheme,
                                      const double &fixed_lag, bool should_print_marginals);
-
-    auto dt() const -> double
-    {
-        return m_dt;
-    }
-    auto N() const -> size_t
-    {
-        return m_N;
-    }
+    auto dt() const -> double;
+    auto N() const -> size_t;
     auto predict_state(const int &idx) -> void;
     auto propagate_state_without_optimising(const int &idx) -> void;
-    auto increment_correction_count() -> void
-    {
-        m_correction_count++;
-    }
+    auto increment_correction_count() -> void;
     auto add_imu_factor_to_graph(const int &idx) -> void;
     auto insert_predicted_state_into_values(const int &idx) -> void;
     auto add_gnss_factor_to_graph(const int &idx) -> void;
     auto optimise(const int &idx, const Optimiser &optimisation_scheme) -> void;
-    auto print_errors(const int &idx) -> void;
+    auto compute_and_print_errors(const int &idx) -> void;
     auto print_current_preintegration_measurement(const int &idx) const -> void;
 
   private:
@@ -94,6 +84,11 @@ class FactorGraphOptimisation
     gtsam::Vector3 m_gyro_bias_true;
     gtsam::imuBias::ConstantBias m_imu_bias_true;
     SimulationData m_data;
+    Eigen::Vector3d m_position_error{};
+    Eigen::Vector3d m_velocity_error{};
+    Eigen::Vector3d m_orientation_error{};
+    Eigen::Vector3d m_acc_bias_error{};
+    Eigen::Vector3d m_gyro_bias_error{};
     /// TODO: Store prev state etc
 };
 

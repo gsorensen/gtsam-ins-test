@@ -118,6 +118,7 @@ auto get_preintegrated_IMU_measurement_ptr(const gtsam::imuBias::ConstantBias &p
 
     return measurement;
 }
+
 FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data, const Optimiser &optimisation_scheme,
                                                  const double &fixed_lag, bool should_print_marginals)
     : m_data{data}, m_print_marginals(should_print_marginals)
@@ -209,6 +210,22 @@ FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data, con
     m_gyro_bias_true = gyro_bias_true;
     m_imu_bias_true = imu_bias_true;
 }
+
+auto FactorGraphOptimisation::dt() const -> double
+{
+    return m_dt;
+}
+
+auto FactorGraphOptimisation::N() const -> size_t
+{
+    return m_N;
+}
+
+auto FactorGraphOptimisation::increment_correction_count() -> void
+{
+    m_correction_count++;
+}
+
 auto FactorGraphOptimisation::predict_state(const int &idx) -> void
 {
     m_output_time += m_dt;
@@ -381,7 +398,7 @@ auto FactorGraphOptimisation::optimise(const int &idx, const Optimiser &optimisa
     fmt::print("({}) Optmisation time elapsed: {} [s]\n", idx, elapsed_opt.count());
 }
 
-auto FactorGraphOptimisation::print_errors(const int &idx) -> void
+auto FactorGraphOptimisation::compute_and_print_errors(const int &idx) -> void
 {
     // Print out the position, orientation and velocity error for comparison + bias values
     gtsam::Vector3 gtsam_position = m_prev_state.pose().translation();
@@ -404,13 +421,15 @@ auto FactorGraphOptimisation::print_errors(const int &idx) -> void
     gtsam::Vector3 velocity_error = gtsam_velocity - true_velocity;
     m_current_velocity_error = velocity_error.norm();
 
+    Eigen::Vector3d acc_error = (m_imu_bias_true.accelerometer() - m_prev_bias.accelerometer()).transpose();
+    Eigen::Vector3d gyro_error = (m_imu_bias_true.gyroscope() - m_prev_bias.gyroscope()).transpose();
+
+    /// TODO: COnsider moving to separate print functions
     fmt::print("({}) Pos err [m]: {} - Att err [deg]: {} - Vel err [m/s]: {}\n", idx, m_current_position_error,
                m_current_orientation_error * rad2deg(1), m_current_velocity_error);
     m_prev_bias.print(fmt::format("({})      Bias values: ", idx));
     m_imu_bias_true.print(fmt::format("({}) True bias values: ", idx));
 
-    Eigen::Vector3d acc_error = (m_imu_bias_true.accelerometer() - m_prev_bias.accelerometer()).transpose();
-    Eigen::Vector3d gyro_error = (m_imu_bias_true.gyroscope() - m_prev_bias.gyroscope()).transpose();
     fmt::print("({}) Acc bias errors [m/s/s]: {} {} {}\n", idx, acc_error.x(), acc_error.y(), acc_error.z());
     fmt::print("({}) Gyro bias errors [deg/s]: {} {} {}\n", idx, gyro_error.x() * rad2deg(1),
                gyro_error.y() * rad2deg(1), gyro_error.z() * rad2deg(1));
