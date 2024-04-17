@@ -54,6 +54,7 @@ class FactorGraphOptimisation
     auto optimise(const int &idx, const Optimiser &optimisation_scheme) -> void;
     auto compute_and_print_errors(const int &idx) -> void;
     auto print_current_preintegration_measurement(const int &idx) const -> void;
+    auto export_data_to_csv(const std::string &filename) const -> void;
 
   private:
     size_t m_N;
@@ -61,12 +62,15 @@ class FactorGraphOptimisation
     gtsam::Values m_initial_values;
     gtsam::Values m_result{};
     std::uint64_t m_correction_count = 0;
-    double m_current_position_error = 0.0;
-    double m_current_velocity_error = 0.0;
-    double m_current_orientation_error = 0.0;
+    Eigen::Vector3d m_current_position_error{};
+    Eigen::Vector3d m_current_velocity_error{};
+    Eigen::Vector3d m_current_orientation_error{};
+    double m_current_position_error_norm{};
+    double m_current_velocity_error_norm{};
+    double m_current_orientation_error_norm{};
     double m_output_time = 0.0;
     double m_dt = 0.01;
-    std::list<Matrix15d> m_P = {};
+    std::vector<Matrix15d> m_P = {};
     Matrix15d m_P_k = Eigen::MatrixXd::Zero(15, 15);
     Matrix15d m_P_corr = Eigen::MatrixXd::Zero(15, 15);
     gtsam::NavState m_prev_state;
@@ -84,11 +88,11 @@ class FactorGraphOptimisation
     gtsam::Vector3 m_gyro_bias_true;
     gtsam::imuBias::ConstantBias m_imu_bias_true;
     SimulationData m_data;
-    Eigen::Vector3d m_position_error{};
-    Eigen::Vector3d m_velocity_error{};
-    Eigen::Vector3d m_orientation_error{};
-    Eigen::Vector3d m_acc_bias_error{};
-    Eigen::Vector3d m_gyro_bias_error{};
+    std::vector<Eigen::Vector3d> m_position_error = {};
+    std::list<Eigen::Vector3d> m_velocity_error = {};
+    std::list<Eigen::Vector3d> m_orientation_error = {};
+    std::list<Eigen::Vector3d> m_acc_bias_error = {};
+    std::list<Eigen::Vector3d> m_gyro_bias_error = {};
     /// TODO: Store prev state etc
 };
 

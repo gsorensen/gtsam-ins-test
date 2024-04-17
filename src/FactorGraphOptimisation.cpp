@@ -185,7 +185,7 @@ FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data, con
     P0.block<6, 6>(0, 0) = P_X;
     P0.block<3, 3>(6, 6) = P_V;
     P0.block<6, 6>(9, 9) = P_B;
-    std::list<Matrix15d> P = {};
+    std::vector<Matrix15d> P = {};
     P.push_back(P0);
     Matrix15d P_k = Eigen::MatrixXd::Zero(15, 15);
     Matrix15d P_corr = Eigen::MatrixXd::Zero(15, 15);
@@ -404,7 +404,9 @@ auto FactorGraphOptimisation::compute_and_print_errors(const int &idx) -> void
     gtsam::Vector3 gtsam_position = m_prev_state.pose().translation();
     gtsam::Vector3 true_position = m_data.p_nb_n.col(idx);
     gtsam::Vector3 position_error = gtsam_position - true_position;
-    m_current_position_error = position_error.norm();
+    m_position_error.push_back(m_current_position_error);
+    m_current_position_error = position_error;
+    m_current_position_error_norm = position_error.norm();
 
     gtsam::Quaternion gtsam_quat = m_prev_state.pose().rotation().toQuaternion();
     gtsam::Quaternion true_quat = gtsam::Rot3::Quaternion(m_data.q_nb.col(idx)[0], m_data.q_nb.col(idx)[1],
@@ -414,19 +416,27 @@ auto FactorGraphOptimisation::compute_and_print_errors(const int &idx) -> void
     gtsam::Quaternion quat_error = gtsam_quat.inverse() * true_quat;
     quat_error.normalize();
     gtsam::Vector3 euler_angle_error{quat_error.x() * 2, quat_error.y() * 2, quat_error.z() * 2};
-    m_current_orientation_error = euler_angle_error.norm();
+    m_orientation_error.push_back(m_current_orientation_error);
+    m_current_orientation_error = euler_angle_error;
+    m_current_orientation_error_norm = euler_angle_error.norm();
 
     gtsam::Vector3 true_velocity = m_data.v_ib_i.col(idx);
     gtsam::Vector3 gtsam_velocity = m_prev_state.velocity();
     gtsam::Vector3 velocity_error = gtsam_velocity - true_velocity;
-    m_current_velocity_error = velocity_error.norm();
+    m_velocity_error.push_back(m_current_velocity_error);
+    m_current_velocity_error = velocity_error;
+    m_current_velocity_error_norm = velocity_error.norm();
 
     Eigen::Vector3d acc_error = (m_imu_bias_true.accelerometer() - m_prev_bias.accelerometer()).transpose();
     Eigen::Vector3d gyro_error = (m_imu_bias_true.gyroscope() - m_prev_bias.gyroscope()).transpose();
 
+    /// NOTE: Done a bit differently to the other states
+    m_acc_bias_error.push_back(acc_error);
+    m_gyro_bias_error.push_back(gyro_error);
+
     /// TODO: COnsider moving to separate print functions
-    fmt::print("({}) Pos err [m]: {} - Att err [deg]: {} - Vel err [m/s]: {}\n", idx, m_current_position_error,
-               m_current_orientation_error * rad2deg(1), m_current_velocity_error);
+    fmt::print("({}) Pos err [m]: {} - Att err [deg]: {} - Vel err [m/s]: {}\n", idx, m_current_position_error_norm,
+               m_current_orientation_error_norm * rad2deg(1), m_current_velocity_error_norm);
     m_prev_bias.print(fmt::format("({})      Bias values: ", idx));
     m_imu_bias_true.print(fmt::format("({}) True bias values: ", idx));
 
@@ -462,3 +472,29 @@ auto FactorGraphOptimisation::print_current_preintegration_measurement(const int
 //         std::cout << "Bias Covariance:\n" << P_B << std::endl;
 //     }
 // }
+
+auto FactorGraphOptimisation::export_data_to_csv(const std::string &filename) const -> void
+{
+    std::ofstream output_file(filename);
+    if (!output_file.is_open())
+    {
+        std::cerr << "Error opening file: " << filename << '\n';
+        return;
+    }
+
+    // Write any necessary headers or initial data
+    output_file << "Column1, Column2, Column3" << '\n';
+
+    double t = 0.0;
+    for (int i = 0; i < m_N; i++)
+    {
+        t += m_dt; // NOTE Placement before/after
+        Eigen::Vector3d pos_err = m_position_error[i];
+        Matrix15d P = m_P[i];
+        output_file << fmt::format("{},{},{},{},{},{},{}\n", t, pos_err.x(), pos_err.y(), pos_err.z(), P(3, 3), P(4, 4),
+                                   P(4, 4), P(5, 5));
+    }
+
+    // Close the file when done
+    output_file.close();
+}

@@ -86,6 +86,8 @@ auto main(int argc, char *argv[]) -> int
 
         fgo.print_current_preintegration_measurement(N - 1);
 
+        fgo.export_data_to_csv("/Users/ghms/ws/ntnu/ins_simulator/src/cpp_test_data.csv");
+
         auto filtering_end_time = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds = filtering_end_time - filtering_start_time;
         fmt::print("Elapsed time: {} [s] - Time horizon data: {} [s]\n", elapsed_seconds.count(),
