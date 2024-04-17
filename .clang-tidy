@@ -1,3 +1,3 @@
 ---
 FormatStyle: file
-Checks: '*,-llvm*,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-fuchsia-*,-readability-identifier-length'
+Checks: '*,-llvm*,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-fuchsia-*,-readability-identifier-length,-misc-non-private-member-variables-in-classes,-cppcoreguidelines-non-private-member-variables-in-classes'
