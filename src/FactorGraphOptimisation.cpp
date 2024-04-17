@@ -489,10 +489,24 @@ auto FactorGraphOptimisation::export_data_to_csv(const std::string &filename) co
     for (int i = 0; i < m_N; i++)
     {
         t += m_dt; // NOTE Placement before/after
-        Eigen::Vector3d pos_err = m_position_error[i];
         Matrix15d P = m_P[i];
-        output_file << fmt::format("{},{},{},{},{},{},{}\n", t, pos_err.x(), pos_err.y(), pos_err.z(), P(3, 3), P(4, 4),
-                                   P(4, 4), P(5, 5));
+        Eigen::Vector3d pos_err = m_position_error[i];
+        Eigen::Vector3d vel_err = m_velocity_error[i];
+        Eigen::Vector3d att_err = m_orientation_error[i];
+        Eigen::Vector3d acc_err = m_acc_bias_error[i];
+        Eigen::Vector3d gyro_err = m_gyro_bias_error[i];
+        output_file << fmt::format("{},", t);
+        output_file << fmt::format("{},{},{},{},{},{},", att_err.x(), att_err.y(), att_err.z(), P(0, 0), P(1, 1),
+                                   P(2, 2));
+        output_file << fmt::format("{},{},{},{},{},{},", pos_err.x(), pos_err.y(), pos_err.z(), P(3, 3), P(4, 4),
+                                   P(5, 5));
+        output_file << fmt::format("{},{},{},{},{},{},", vel_err.x(), vel_err.y(), vel_err.z(), P(6, 6), P(7, 7),
+                                   P(8, 8));
+        output_file << fmt::format("{},{},{},{},{},{},", acc_err.x(), acc_err.y(), acc_err.z(), P(9, 9), P(10, 10),
+                                   P(11, 11));
+        output_file << fmt::format("{},{},{},{},{},{},", gyro_err.x(), gyro_err.y(), gyro_err.z(), P(12, 12), P(13, 13),
+                                   P(14, 14));
+        output_file << "\n";
     }
 
     // Close the file when done

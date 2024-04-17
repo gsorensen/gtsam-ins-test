@@ -89,10 +89,10 @@ class FactorGraphOptimisation
     gtsam::imuBias::ConstantBias m_imu_bias_true;
     SimulationData m_data;
     std::vector<Eigen::Vector3d> m_position_error = {};
-    std::list<Eigen::Vector3d> m_velocity_error = {};
-    std::list<Eigen::Vector3d> m_orientation_error = {};
-    std::list<Eigen::Vector3d> m_acc_bias_error = {};
-    std::list<Eigen::Vector3d> m_gyro_bias_error = {};
+    std::vector<Eigen::Vector3d> m_velocity_error = {};
+    std::vector<Eigen::Vector3d> m_orientation_error = {};
+    std::vector<Eigen::Vector3d> m_acc_bias_error = {};
+    std::vector<Eigen::Vector3d> m_gyro_bias_error = {};
     /// TODO: Store prev state etc
 };
 
