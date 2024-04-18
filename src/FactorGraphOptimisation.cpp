@@ -315,7 +315,7 @@ auto FactorGraphOptimisation::add_pars_factor_to_graph(const int &idx) -> void
         const double azimuth = measurement[beacon_idx + 1];
         const double elevation = measurement[beacon_idx + 2];
         gtsam::noiseModel::Diagonal::shared_ptr noise_model =
-            gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(1) << 15.0).finished());
+            gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(1) << 5.0).finished());
 
         gtsam::noiseModel::Diagonal::shared_ptr loose_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1000);
 
