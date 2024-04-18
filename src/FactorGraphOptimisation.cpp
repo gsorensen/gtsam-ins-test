@@ -296,20 +296,7 @@ auto FactorGraphOptimisation::add_gnss_factor_to_graph(const int &idx) -> void
 
 auto FactorGraphOptimisation::add_pars_factor_to_graph(const int &idx) -> void
 {
-    gtsam::Point3 locator_pos = (gtsam::Vector(3) << 100, 100, 10).finished();
-    gtsam::Rot3 user_orientation = gtsam::Rot3::Quaternion(1, 0, 0, 0);
-    gtsam::Point3 user_pos = (gtsam::Vector(3) << 300, 100, 10).finished();
-    gtsam::Pose3 user_pose = gtsam::Pose3{user_orientation, user_pos};
-
-    /// NOTE: Follow this example
-    /// https://github.com/borglab/gtsam/blob/develop/examples/RangeISAMExample_plaza2.cpp#L179
-    /// for the range only example
-    ///
-    /// NOTE: For the range bearing example, you have to go into GTSAM and,
-    /// based off BearingRangeFactor, you probably have to define your own
-    /// factor  cs
-    ///
-
+    /// NOTE: Hardcoded values from Matlab for now
     static const gtsam::Point3 beacon0 = (gtsam::Vector(3) << -650, -650, 750).finished();
     static const gtsam::Point3 beacon1 = (gtsam::Vector(3) << 650, -650, 750).finished();
     static const gtsam::Point3 beacon2 = (gtsam::Vector(3) << -650, 650, 750).finished();
@@ -318,13 +305,8 @@ auto FactorGraphOptimisation::add_pars_factor_to_graph(const int &idx) -> void
 
     const Eigen::VectorXd measurement = m_data.z_PARS.row(idx);
     std::cout << measurement << '\n';
-    /// NOTE: need two variables one for IDs and one to loop correctly throught
-    /// measurements. However, this is no ideal the way it is now, just trying
-    /// to get it working
+
     int beacon_idx = 0;
-    /// TODO: Don't hardcode this
-    /// I think problem now is that the ranges are in relative frames, need to
-    /// convert to common frame for it to be solved
     for (int beacon_id = 0; beacon_id < 4; beacon_id++)
     {
         gtsam::Symbol beacon_key('L', beacon_id);
