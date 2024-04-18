@@ -26,11 +26,11 @@
 
 #include <variant>
 
-enum class Optimiser
+enum class OptimisationScheme
 {
-    iSam2,
-    fixLag,
-    LM
+    ISAM2,
+    FixedLag,
+    LevenbergMarquardt
 };
 
 using Matrix15d = Eigen::Matrix<double, 15, 15>;
@@ -41,7 +41,7 @@ using PreintegratedMeasurement =
 class FactorGraphOptimisation
 {
   public:
-    explicit FactorGraphOptimisation(const SimulationData &data, const Optimiser &optimisation_scheme,
+    explicit FactorGraphOptimisation(const SimulationData &data, const OptimisationScheme &optimisation_scheme,
                                      const double &fixed_lag, bool should_print_marginals);
     auto dt() const -> double;
     auto N() const -> size_t;
@@ -51,7 +51,7 @@ class FactorGraphOptimisation
     auto add_imu_factor_to_graph(const int &idx) -> void;
     auto insert_predicted_state_into_values(const int &idx) -> void;
     auto add_gnss_factor_to_graph(const int &idx) -> void;
-    auto optimise(const int &idx, const Optimiser &optimisation_scheme) -> void;
+    auto optimise(const int &idx, const OptimisationScheme &optimisation_scheme) -> void;
     auto compute_and_print_errors(const int &idx) -> void;
     auto print_current_preintegration_measurement(const int &idx) const -> void;
     auto export_data_to_csv(const std::string &filename) const -> void;
@@ -100,7 +100,7 @@ auto initialise_prior_noise_models()
     -> std::tuple<gtsam::noiseModel::Diagonal::shared_ptr, gtsam::noiseModel::Diagonal::shared_ptr,
                   gtsam::noiseModel::Diagonal::shared_ptr>;
 
-auto get_ISAM2_params(const Optimiser &optimisation_scheme) -> gtsam::ISAM2Params;
+auto get_ISAM2_params(const OptimisationScheme &optimisation_scheme) -> gtsam::ISAM2Params;
 
 void integrate_measurement(PreintegratedMeasurement &measurement, const Eigen::Vector3d &f, const Eigen::Vector3d &w,
                            double dt);

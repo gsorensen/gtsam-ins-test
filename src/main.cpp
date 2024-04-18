@@ -50,7 +50,7 @@ auto main(int argc, char *argv[]) -> int
     }
 
     /* CONSTANTS*/
-    const Optimiser optimisation_scheme = Optimiser::fixLag;
+    const auto optimisation_scheme = OptimisationScheme::FixedLag;
     const bool optimise = true;
     const bool print_marginals = false;
     const double fixed_lag = 5.0; // fixed smoother lag

@@ -18,26 +18,26 @@ auto initialise_prior_noise_models()
     return {prior_pose_noise_model, prior_velocity_noise_model, prior_bias_noise_model};
 }
 /// TODO Move
-auto get_ISAM2_params(const Optimiser &optimisation_scheme) -> gtsam::ISAM2Params
+auto get_ISAM2_params(const OptimisationScheme &optimisation_scheme) -> gtsam::ISAM2Params
 {
     gtsam::ISAM2Params params;
     switch (optimisation_scheme)
     {
-    case Optimiser::iSam2:
+    case OptimisationScheme::ISAM2:
         fmt::print("Using ISAM2\n");
         params.relinearizeThreshold = 0.001;
         params.relinearizeSkip = 1;
         params.findUnusedFactorSlots = true;
         // params.setFactorization("QR");
         break;
-    case Optimiser::fixLag:
+    case OptimisationScheme::FixedLag:
         fmt::print("Using ISAM2 Fixed lag smoother\n");
         params.relinearizeThreshold = 0.001;
         params.relinearizeSkip = 1;
         params.findUnusedFactorSlots = true;
         // params.setFactorization("QR");
         break;
-    case Optimiser::LM:
+    case OptimisationScheme::LevenbergMarquardt:
         fmt::print("Using LM\n");
         break;
     default:
@@ -119,8 +119,9 @@ auto get_preintegrated_IMU_measurement_ptr(const gtsam::imuBias::ConstantBias &p
     return measurement;
 }
 
-FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data, const Optimiser &optimisation_scheme,
-                                                 const double &fixed_lag, bool should_print_marginals)
+FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data,
+                                                 const OptimisationScheme &optimisation_scheme, const double &fixed_lag,
+                                                 bool should_print_marginals)
     : m_data{data}, m_print_marginals(should_print_marginals)
 {
     // Set the prior based on data
@@ -294,13 +295,13 @@ auto FactorGraphOptimisation::propagate_state_without_optimising(const int &idx)
     m_prev_state = m_prop_state;
 }
 
-auto FactorGraphOptimisation::optimise(const int &idx, const Optimiser &optimisation_scheme) -> void
+auto FactorGraphOptimisation::optimise(const int &idx, const OptimisationScheme &optimisation_scheme) -> void
 {
     fmt::print("({}) Optimising...\n", idx);
     auto start_optimisation = std::chrono::system_clock::now();
     switch (optimisation_scheme)
     {
-    case Optimiser::iSam2: {
+    case OptimisationScheme::ISAM2: {
         m_isam2.update(m_graph, m_initial_values);
         m_result = m_isam2.calculateEstimate();
 
@@ -319,7 +320,7 @@ auto FactorGraphOptimisation::optimise(const int &idx, const Optimiser &optimisa
         m_initial_values.clear();
         break;
     }
-    case Optimiser::fixLag: {
+    case OptimisationScheme::FixedLag: {
         m_smoother_timestamps_maps[X(m_correction_count)] = m_output_time;
         m_smoother_timestamps_maps[V(m_correction_count)] = m_output_time;
         m_smoother_timestamps_maps[B(m_correction_count)] = m_output_time;
@@ -344,7 +345,7 @@ auto FactorGraphOptimisation::optimise(const int &idx, const Optimiser &optimisa
         m_smoother_timestamps_maps.clear();
         break;
     }
-    case Optimiser::LM: {
+    case OptimisationScheme::LevenbergMarquardt: {
         gtsam::LevenbergMarquardtOptimizer optimizer(m_graph, m_initial_values);
         m_result = optimizer.optimize();
 
