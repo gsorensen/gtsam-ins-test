@@ -13,6 +13,7 @@ include_directories(${GTSAM_INCLUDE_DIR})
 include_directories(${Eigen3_INCLUDE_DIR})
 set(SOURCE_FILES 
     src/SimulationData.cpp
+    src/BleBeacon.cpp
     src/FactorGraphOptimisation.cpp
     src/utils.cpp
     src/main.cpp)
