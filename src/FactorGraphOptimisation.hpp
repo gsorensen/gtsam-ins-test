@@ -103,6 +103,7 @@ class FactorGraphOptimisation
     std::vector<Eigen::Vector3d> m_orientation_error = {};
     std::vector<Eigen::Vector3d> m_acc_bias_error = {};
     std::vector<Eigen::Vector3d> m_gyro_bias_error = {};
+    std::set<gtsam::Symbol> m_beacon_keys = {};
     /// TODO: Store prev state etc
 };
 

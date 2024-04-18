@@ -9,6 +9,7 @@
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/linear/linearExceptions.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/navigation/GPSFactor.h>
 #include <gtsam/navigation/ImuBias.h>
@@ -51,7 +52,7 @@ auto main(int argc, char *argv[]) -> int
 
     /* CONSTANTS*/
     const auto optimisation_scheme = OptimisationScheme::FixedLag;
-    const auto aiding_scheme = Aiding::GNSS;
+    const auto aiding_scheme = Aiding::PARS;
     const bool optimise = true;
     const bool print_marginals = false;
     const double fixed_lag = 5.0; // fixed smoother lag
@@ -72,11 +73,23 @@ auto main(int argc, char *argv[]) -> int
             if (update_step)
             {
                 fgo.increment_correction_count();
+
+                switch (aiding_scheme)
+                {
+                case Aiding::GNSS:
+                    fgo.add_gnss_factor_to_graph(idx);
+                    break;
+                case Aiding::PARS:
+                    fgo.add_pars_factor_to_graph(idx);
+                    break;
+                default:
+                    break;
+                }
+
                 fgo.add_imu_factor_to_graph(idx);
                 fgo.insert_predicted_state_into_values(idx);
                 /// TODO: Make add aiding factor to graph or something along
                 /// those lines, when introducing the PARS factors
-                fgo.add_gnss_factor_to_graph(idx);
                 fgo.optimise(idx);
             }
             else
@@ -95,6 +108,10 @@ auto main(int argc, char *argv[]) -> int
         std::chrono::duration<double> elapsed_seconds = filtering_end_time - filtering_start_time;
         fmt::print("Elapsed time: {} [s] - Time horizon data: {} [s]\n", elapsed_seconds.count(),
                    (static_cast<double>(N) + 1) * fgo.dt());
+    }
+    catch (gtsam::IndeterminantLinearSystemException &e)
+    {
+        std::cout << e.what() << '\n';
     }
     catch (std::invalid_argument &e)
     {

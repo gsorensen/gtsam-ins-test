@@ -29,7 +29,7 @@
     {
         data.num_locators = data_matrix.col(43).transpose();
         int measurement_size = data.num_locators[0];
-        data.z_PARS = data_matrix.block(0, 44, rows, measurement_size);
+        data.z_PARS = data_matrix.block(0, 44, rows, measurement_size * 3);
     }
     // NOTE: Temp check to use generated data before change, simply set the
     // estimates to true states if the data file doesn't contain them

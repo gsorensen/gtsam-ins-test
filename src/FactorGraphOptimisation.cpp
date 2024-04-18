@@ -1,6 +1,8 @@
 #include "FactorGraphOptimisation.hpp"
 #include <gtsam/geometry/Point3.h>
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/linear/NoiseModel.h>
+#include <gtsam/nonlinear/PriorFactor.h>
 #include <gtsam/sam/BearingRangeFactor.h>
 #include <gtsam/sam/RangeFactor.h>
 
@@ -301,7 +303,58 @@ auto FactorGraphOptimisation::add_pars_factor_to_graph(const int &idx) -> void
 
     /// NOTE: Follow this example
     /// https://github.com/borglab/gtsam/blob/develop/examples/RangeISAMExample_plaza2.cpp#L179
-    gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor{};
+    /// for the range only example
+    ///
+    /// NOTE: For the range bearing example, you have to go into GTSAM and,
+    /// based off BearingRangeFactor, you probably have to define your own
+    /// factor  cs
+    ///
+
+    static const gtsam::Point3 beacon0 = (gtsam::Vector(3) << -650, -650, 750).finished();
+    static const gtsam::Point3 beacon1 = (gtsam::Vector(3) << 650, -650, 750).finished();
+    static const gtsam::Point3 beacon2 = (gtsam::Vector(3) << -650, 650, 750).finished();
+    static const gtsam::Point3 beacon3 = (gtsam::Vector(3) << 650, 650, 750).finished();
+    static const std::vector<gtsam::Point3> beacons = {beacon0, beacon1, beacon2, beacon3};
+
+    const Eigen::VectorXd measurement = m_data.z_PARS.row(idx);
+    std::cout << measurement << '\n';
+    /// NOTE: need two variables one for IDs and one to loop correctly throught
+    /// measurements. However, this is no ideal the way it is now, just trying
+    /// to get it working
+    int beacon_idx = 0;
+    /// TODO: Don't hardcode this
+    /// I think problem now is that the ranges are in relative frames, need to
+    /// convert to common frame for it to be solved
+    for (int beacon_id = 0; beacon_id < 4; beacon_id++)
+    {
+        gtsam::Symbol beacon_key('L', beacon_id);
+        gtsam::Symbol test = X(m_correction_count);
+        const double range = measurement[beacon_idx];
+        const double azimuth = measurement[beacon_idx + 1];
+        const double elevation = measurement[beacon_idx + 2];
+        gtsam::noiseModel::Diagonal::shared_ptr noise_model =
+            gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector(1) << 15.0).finished());
+
+        gtsam::noiseModel::Diagonal::shared_ptr loose_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1000);
+
+        fmt::print("Adding range factor for beacon {} wit key {} at key {} with range {}\n", beacon_id,
+                   beacon_key.string(), test.string(), range);
+        gtsam::RangeFactor<gtsam::Pose3, gtsam::Point3> range_factor{X(m_correction_count), beacon_key, range,
+                                                                     noise_model};
+        m_graph.add(range_factor);
+
+        if (m_beacon_keys.count(beacon_key) == 0)
+        {
+            gtsam::PriorFactor<gtsam::Point3> prior{beacon_key, beacons[beacon_id], loose_noise};
+            m_graph.add(prior);
+            fmt::print("Adding the following beacon to initial values for beacon id {}\n", beacon_id);
+            std::cout << beacons[beacon_id] << "\n";
+            m_initial_values.insert(beacon_key, beacons[beacon_id]);
+            m_beacon_keys.insert(beacon_key);
+        }
+
+        beacon_idx += 3;
+    }
 }
 
 auto FactorGraphOptimisation::propagate_state_without_optimising(const int &idx) -> void
