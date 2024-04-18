@@ -51,6 +51,7 @@ auto main(int argc, char *argv[]) -> int
 
     /* CONSTANTS*/
     const auto optimisation_scheme = OptimisationScheme::FixedLag;
+    const auto aiding_scheme = Aiding::GNSS;
     const bool optimise = true;
     const bool print_marginals = false;
     const double fixed_lag = 5.0; // fixed smoother lag
@@ -58,7 +59,7 @@ auto main(int argc, char *argv[]) -> int
     /// Try except used because GTSAM under the hood may throw an exception
     try
     {
-        FactorGraphOptimisation fgo{data, optimisation_scheme, fixed_lag, print_marginals};
+        FactorGraphOptimisation fgo{data, optimisation_scheme, aiding_scheme, fixed_lag, print_marginals};
 
         const auto filtering_start_time = std::chrono::system_clock::now();
         const auto N = static_cast<int>(fgo.N());
@@ -73,8 +74,10 @@ auto main(int argc, char *argv[]) -> int
                 fgo.increment_correction_count();
                 fgo.add_imu_factor_to_graph(idx);
                 fgo.insert_predicted_state_into_values(idx);
+                /// TODO: Make add aiding factor to graph or something along
+                /// those lines, when introducing the PARS factors
                 fgo.add_gnss_factor_to_graph(idx);
-                fgo.optimise(idx, optimisation_scheme);
+                fgo.optimise(idx);
             }
             else
             {

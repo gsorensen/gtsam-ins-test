@@ -1,4 +1,8 @@
 #include "FactorGraphOptimisation.hpp"
+#include <gtsam/geometry/Point3.h>
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/sam/BearingRangeFactor.h>
+#include <gtsam/sam/RangeFactor.h>
 
 using gtsam::symbol_shorthand::B; // bias (ax, ay, az, gx, gy, gz)
 using gtsam::symbol_shorthand::V; // velocity (xdot, ydot, zdot)
@@ -120,9 +124,10 @@ auto get_preintegrated_IMU_measurement_ptr(const gtsam::imuBias::ConstantBias &p
 }
 
 FactorGraphOptimisation::FactorGraphOptimisation(const SimulationData &data,
-                                                 const OptimisationScheme &optimisation_scheme, const double &fixed_lag,
-                                                 bool should_print_marginals)
-    : m_data{data}, m_print_marginals(should_print_marginals)
+                                                 const OptimisationScheme &optimisation_scheme, const Aiding &aided_by,
+                                                 const double &fixed_lag, bool should_print_marginals)
+    : m_data{data}, m_print_marginals(should_print_marginals), m_optimisation_scheme{optimisation_scheme},
+      m_aided_by{aided_by}
 {
     // Set the prior based on data
     gtsam::Point3 prior_point{data.p_nb_n.col(0)};
@@ -287,6 +292,18 @@ auto FactorGraphOptimisation::add_gnss_factor_to_graph(const int &idx) -> void
     m_graph.add(gps_factor);
 }
 
+auto FactorGraphOptimisation::add_pars_factor_to_graph(const int &idx) -> void
+{
+    gtsam::Point3 locator_pos = (gtsam::Vector(3) << 100, 100, 10).finished();
+    gtsam::Rot3 user_orientation = gtsam::Rot3::Quaternion(1, 0, 0, 0);
+    gtsam::Point3 user_pos = (gtsam::Vector(3) << 300, 100, 10).finished();
+    gtsam::Pose3 user_pose = gtsam::Pose3{user_orientation, user_pos};
+
+    /// NOTE: Follow this example
+    /// https://github.com/borglab/gtsam/blob/develop/examples/RangeISAMExample_plaza2.cpp#L179
+    gtsam::BearingRangeFactor<gtsam::Pose3, gtsam::Point3> factor{};
+}
+
 auto FactorGraphOptimisation::propagate_state_without_optimising(const int &idx) -> void
 {
     std::ignore = idx;
@@ -295,11 +312,11 @@ auto FactorGraphOptimisation::propagate_state_without_optimising(const int &idx)
     m_prev_state = m_prop_state;
 }
 
-auto FactorGraphOptimisation::optimise(const int &idx, const OptimisationScheme &optimisation_scheme) -> void
+auto FactorGraphOptimisation::optimise(const int &idx) -> void
 {
     fmt::print("({}) Optimising...\n", idx);
     auto start_optimisation = std::chrono::system_clock::now();
-    switch (optimisation_scheme)
+    switch (m_optimisation_scheme)
     {
     case OptimisationScheme::ISAM2: {
         m_isam2.update(m_graph, m_initial_values);

@@ -33,6 +33,13 @@ enum class OptimisationScheme
     LevenbergMarquardt
 };
 
+enum class Aiding
+{
+    GNSS,
+    PARS,
+    GNSSPARS
+};
+
 using Matrix15d = Eigen::Matrix<double, 15, 15>;
 
 using PreintegratedMeasurement =
@@ -42,7 +49,7 @@ class FactorGraphOptimisation
 {
   public:
     explicit FactorGraphOptimisation(const SimulationData &data, const OptimisationScheme &optimisation_scheme,
-                                     const double &fixed_lag, bool should_print_marginals);
+                                     const Aiding &aided_by, const double &fixed_lag, bool should_print_marginals);
     auto dt() const -> double;
     auto N() const -> size_t;
     auto predict_state(const int &idx) -> void;
@@ -51,7 +58,8 @@ class FactorGraphOptimisation
     auto add_imu_factor_to_graph(const int &idx) -> void;
     auto insert_predicted_state_into_values(const int &idx) -> void;
     auto add_gnss_factor_to_graph(const int &idx) -> void;
-    auto optimise(const int &idx, const OptimisationScheme &optimisation_scheme) -> void;
+    auto add_pars_factor_to_graph(const int &idx) -> void;
+    auto optimise(const int &idx) -> void;
     auto compute_and_print_errors(const int &idx) -> void;
     auto print_current_preintegration_measurement(const int &idx) const -> void;
     auto export_data_to_csv(const std::string &filename) const -> void;
@@ -59,6 +67,8 @@ class FactorGraphOptimisation
   private:
     size_t m_N;
     bool m_print_marginals;
+    OptimisationScheme m_optimisation_scheme;
+    Aiding m_aided_by;
     gtsam::Values m_initial_values;
     gtsam::Values m_result{};
     std::uint64_t m_correction_count = 0;
