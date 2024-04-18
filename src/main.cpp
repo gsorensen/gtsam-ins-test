@@ -82,6 +82,10 @@ auto main(int argc, char *argv[]) -> int
                 case Aiding::PARS:
                     fgo.add_pars_factor_to_graph(idx);
                     break;
+                case Aiding::GNSSPARS:
+                    fgo.add_gnss_factor_to_graph(idx);
+                    fgo.add_pars_factor_to_graph(idx);
+                    break;
                 default:
                     break;
                 }
